@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>HL2 SOTA CW</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <h1>HL2 SOTA CW</h1>
+    <p class="muted">Minimal Web-UI (Frequenz/Mode + CW Jobs)</p>
+  </header>
+
+  <main>
+    <section>
+      <h2>Backend</h2>
+      <label>API Base URL
+        <input id="apiBase" type="text" value="/api" />
+      </label>
+      <button id="btnHealth">Health</button>
+      <pre id="healthOut"></pre>
+    </section>
+
+    <section>
+      <h2>HL2 Control</h2>
+      <div class="row">
+        <label>Frequenz (Hz)
+          <input id="freqHz" type="number" value="7030000" />
+        </label>
+        <button id="btnSetFreq">Set</button>
+      </div>
+
+      <div class="row">
+        <label>Mode
+          <input id="mode" type="text" value="CWU" />
+        </label>
+        <button id="btnSetMode">Set</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>CW</h2>
+      <label>Text
+        <input id="cwText" type="text" value="CQ SOTA DE HB9XXX" />
+      </label>
+      <div class="row">
+        <label>WPM
+          <input id="cwWpm" type="number" value="20" />
+        </label>
+        <label>PTT Lead (ms)
+          <input id="cwLead" type="number" value="80" />
+        </label>
+        <label>PTT Tail (ms)
+          <input id="cwTail" type="number" value="120" />
+        </label>
+      </div>
+
+      <div class="row">
+        <button id="btnCwSend">Send</button>
+        <button id="btnCwAbort" class="danger">Abort</button>
+        <button id="btnCwStatus">Status</button>
+      </div>
+
+      <pre id="cwOut"></pre>
+    </section>
+
+    <section>
+      <h2>Docs</h2>
+      <ul>
+        <li><a href="https://github.com/philibertschlutzki/Hermes_Lite_SDR_SOTA_CW/blob/main/docs/01_hardware_wiring.md" target="_blank">Hardware Wiring</a></li>
+        <li><a href="https://github.com/philibertschlutzki/Hermes_Lite_SDR_SOTA_CW/blob/main/docs/02_bringup_checklist.md" target="_blank">Bring-up Checklist</a></li>
+      </ul>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

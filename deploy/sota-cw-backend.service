@@ -1,0 +1,18 @@
+[Unit]
+Description=HL2 SOTA CW FastAPI Backend
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/opt/sota-cw/pi/backend
+Environment="SOTA_CW_HL2_IP=192.168.1.50"
+Environment="SOTA_CW_HL2_PORT=1024"
+Environment="SOTA_CW_IO_REG_BASE=200"
+ExecStart=/opt/sota-cw/pi/backend/.venv/bin/uvicorn sota_cw.api:app --host 127.0.0.1 --port 8000
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
