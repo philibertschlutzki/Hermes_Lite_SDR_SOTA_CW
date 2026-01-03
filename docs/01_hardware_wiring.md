@@ -1,29 +1,27 @@
-# Hardware-Verdrahtung (HL2 + IO-Board)
+# Hardware & Verdrahtung
 
-## Annahmen
+Ziel: Am Ende dieser Seite ist klar, welche Kabel wohin müssen, damit PTT/KEY (und optional weitere IOs) korrekt funktionieren.
 
-- HL2 nutzt eine 3,5mm TRS-Buchse für CW/Key/PTT; im Kontext dieses Projekts wird angenommen: **Tip = KEY**, **Ring = PTT**, **Sleeve = GND**. [file:1]
-- Das HL2 IO-Board stellt Low-Side-Switch-Ausgänge bereit ("Kontakt nach Masse"). [file:1]
+## Voraussetzungen
+- HL2 ist mechanisch fertig aufgebaut und kann mit Strom versorgt werden.
+- Optional: IO-Board ist vorhanden und soll PTT/KEY/GPIO übernehmen.
 
-## Empfehlung (minimaler Start)
+## Prinzip: „Low-Side“ Ausgänge
+Viele Ausgänge am IO-Board sind als Low-Side gedacht: Der Ausgang verbindet im aktiven Zustand den Anschluss mit GND.
+Das passt gut zu PTT/KEY-Eingängen, die gegen Masse gezogen werden sollen.
 
-- IO-Board Low-Side OUT1 → PTT (Ring). [file:1]
-- IO-Board Low-Side OUT2 → KEY (Tip). [file:1]
-- IO-Board GND → Sleeve (GND). [file:1]
+## Verdrahtungs-Checkliste (kurz)
+- GND ist gemeinsam (HL2, IO-Board, ggf. Key/Interface).
+- PTT und KEY nicht vertauschen.
+- Bei TRS-Klinke: Tip/Ring/Sleeve sauber zuordnen (Hersteller/Interface kann variieren).
 
-## Hinweise
+## Empfohlene Dokumentation, die du parallel offen haben solltest
+- HL2/Protocol Wiki (für Kontext, falls du tiefer debuggen musst): https://github.com/softerhardware/Hermes-Lite2/wiki/Protocol
 
-- OUT8 sollte **nicht** für CW-Keying verwendet werden (typisch RC-gefiltert / PWM-Use-Case); OUT1..OUT7 sind für schnelle Schaltvorgänge geeigneter. [file:1]
+## Ergebnis: Woran erkenne ich „Verdrahtung ok“?
+- PTT schaltet reproduzierbar in TX (ohne „Flattern“).
+- KEY erzeugt saubere CW-Tastung (ohne Hänger).
+- Nichts wird heiß, keine Brownouts/Resets.
 
-## Verdrahtungstabelle
-
-| Signal | HL2 TRS | IO-Board | Bemerkung |
-|---|---|---|---|
-| KEY | Tip | OUT2 (Low-Side) | Schaltet gegen GND. |
-| PTT | Ring | OUT1 (Low-Side) | PTT Vor-/Nachlauf per Firmware/Job. |
-| GND | Sleeve | GND | Gemeinsame Masse. |
-
-## Vor dem ersten Einschalten
-
-- Durchgang/Isolationsprüfung: KEY/PTT dürfen im Ruhezustand **nicht** gegen GND kurzgeschlossen sein (nur wenn Ausgang aktiv). [file:1]
-- Erst danach HL2/IO-Board zusammenstecken und einschalten. [file:1]
+## Nächster Schritt
+Weiter mit: 02_bringup_checklist.md

@@ -1,40 +1,23 @@
-# IO-Board Register-Protokoll (CW Jobs)
+# IO-Board Register/Protokoll (Entwickler & Debug)
 
-Dieses Dokument definiert ein **reserviertes Register-Fenster** (ab 200), damit CW-Job-Funktionalität nicht mit vorhandenen IO-Board-Features kollidiert. [file:1]
+Diese Seite ist für alle, die verstehen wollen, wie das IO-Board per Register angesprochen wird, oder die Backend/WebUI erweitern möchten.
 
-## Registerbereich
+## Kontext: HL2 Protokoll
+Der Hermes-Lite-2 ist kompatibilitätsorientiert aufgebaut und lehnt sich an openHPSDR „protocol1“/Metis an; Details inkl. Board_ID und Paketstruktur stehen im HL2-Wiki.
 
-- Basisadresse: `200` (dezimal). [file:1]
-- Register sind 16-bit (0..65535) gedacht; Text wird als ASCII in 16-bit Wörtern gepackt (2 Zeichen pro Register). [file:1]
+## Registermodell (typisches Muster)
+Viele IO-Board-Firmwares nutzen ein statisches Register-Array (z. B. 256 Bytes), in das geschrieben und aus dem gelesen werden kann; ohne Zusatzlogik liefert ein Read oft einfach den zuletzt geschriebenen Wert zurück.
 
-## Kommandos
+## Register-Namensraum / Kollisionen vermeiden
+Wenn mehrere Tools/Backends Register nutzen, ist es sinnvoll, „höhere“ Register (z. B. ab 200) für projektspezifische Features zu verwenden und die Nutzung zu dokumentieren, um Kollisionen zu vermeiden.
 
-- `CW_CMD = 0`: Idle
-- `CW_CMD = 1`: Start Job (Firmware liest Parameter & Textbuffer)
-- `CW_CMD = 2`: Abort (Firmware stoppt sofort, setzt Status)
+## Empfehlung für diese Repo-Doku
+- Lege eine kleine Tabelle im Code/Repo an: Register → Bedeutung → Bitfelder → Default → Version.
+- Dokumentiere mindestens:
+  - Welche Register steuern PTT/KEY?
+  - Welche sind „Status“ vs. „Command“?
+  - Welche sind latched / welche sind edge-triggered?
 
-## Register Map
-
-| Register | Name | R/W | Bedeutung |
-|---:|---|:---:|---|
-| 200 | CW_CMD | R/W | 0=Idle, 1=Start, 2=Abort. |
-| 201 | CW_STATUS | R | 0=Idle, 1=Running, 2=Done, 3=Aborted, 4=Error. |
-| 202 | CW_WPM | R/W | Words per minute (typ. 5..40). |
-| 203 | PTT_LEAD_MS | R/W | PTT Vorlaufzeit in ms. |
-| 204 | PTT_TAIL_MS | R/W | PTT Nachlaufzeit in ms. |
-| 205 | TEXT_LEN | R/W | Anzahl ASCII-Zeichen (max. `TEXT_MAX_CHARS`). |
-| 206 | PROGRESS | R | Fortschritt: index in Zeichen (0..TEXT_LEN). |
-| 207 | ERROR_CODE | R | 0=ok, sonst Fehlercode. |
-| 208.. | TEXT_BUF | R/W | Textbuffer (2 ASCII pro Register, HighByte/LowByte). |
-
-## Text Packing
-
-- `TEXT_BUF[i]` enthält zwei Zeichen: High-Byte = Zeichen `2*i`, Low-Byte = Zeichen `2*i+1`. [file:1]
-- Bei ungerader Länge wird das letzte Low-Byte mit `0x00` gepaddet. [file:1]
-
-## Ablauf (State Machine)
-
-1. Host schreibt Parameter + Textbuffer, dann `CW_CMD=1`. [file:1]
-2. Firmware setzt `CW_STATUS=Running`, toggelt PTT/KEY gemäss Timing, aktualisiert `PROGRESS`. [file:1]
-3. Am Ende setzt Firmware `CW_STATUS=Done` und `CW_CMD=0`. [file:1]
-4. Bei Abort: Host setzt `CW_CMD=2`, Firmware stoppt, `CW_STATUS=Aborted`, `CW_CMD=0`. [file:1]
+## Weiterführende Links
+- HL2 Protocol Wiki: https://github.com/softerhardware/Hermes-Lite2/wiki/Protocol
+- Diskussion/Best-Practice zu IO-Board-Registerarrays und Registerbereichen: https://groups.google.com/g/hermes-lite/c/zVF4yR1VyjA

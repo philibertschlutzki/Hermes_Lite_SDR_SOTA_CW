@@ -1,14 +1,37 @@
-# Überblick
+# Überblick: Hermes Lite SDR SOTA CW
 
-Dieses Projekt stellt ein schlankes, portables Bedienkonzept für den **Hermes Lite 2 (HL2)** bereit: Raspberry Pi als "Control-Plane" (API/Web) und HL2 IO-Board (RP2040/Pico) als "Realtime-Plane" (CW-Keying). [file:1]
+Diese Dokumentation beschreibt, wie dieses Projekt mit einem Hermes-Lite-2 (HL2) und (optional) einem IO-Board so eingerichtet wird, dass CW/Keying/PTT und die Bedienung reproduzierbar funktionieren.
 
-## Architektur
+## Für wen ist das?
+- Anfänger: Schritt-für-Schritt bis zum ersten Test.
+- Fortgeschrittene: Protokoll-/Registerdetails und Debug-Hinweise.
 
-- Raspberry Pi: REST API (FastAPI) + statische Web-UI (Smartphone). [file:1]
-- HL2: HF-Frontend/SDR; Kommunikation typischerweise über HL2-UDP-Protokoll (z. B. via `hermeslite.py`). [file:1]
-- HL2 IO-Board: Schaltet PTT/KEY über Low-Side-Switch-Ausgänge und führt CW-Timing lokal aus (Pico-Firmware). [file:1]
+## Was wird hier dokumentiert?
+- Hardware-Verdrahtung (HL2 ↔ IO-Board ↔ Key/PTT/Peripherie)
+- Bring-up Checkliste (Strom, Netzwerk, Firmware, Funktionstests)
+- Register-/Protokollkonzept des IO-Boards (für Entwickler/Debug)
+- WebUI: typische Bedienabläufe
+- Troubleshooting: typische Fehlerbilder + Checks
 
-## Designprinzipien
+## Voraussetzungen (Minimum)
+- Ein funktionsfähiger Hermes-Lite-2 (Netzwerk erreichbar, RX/TX grundsätzlich möglich)
+- Ein PC im selben Netzwerk (für WebUI/SDR-Software)
+- Optional: IO-Board, falls PTT/KEY/GPIO über Register gesteuert werden
 
-- CW-Timing **nicht** auf dem Pi (Jitter/Latency), sondern als Job/Parameter an das IO-Board (Register) übergeben. [file:1]
-- Keine Third-Party-Quelltexte in dieses Repo kopieren; stattdessen referenzieren/einbinden. [file:1]
+## Empfohlene Leseroute
+1. 01_hardware_wiring.md
+2. 02_bringup_checklist.md
+3. 04_webui_user_guide.md
+4. 05_troubleshooting.md
+5. 03_ioboard_register_protocol.md (nur wenn du Register/Backend debuggen oder erweitern willst)
+
+## Begriffsklärung (kurz)
+- PTT: „Push To Talk“, schaltet Senden ein/aus.
+- KEY: CW-Tastung (Morsetaste/Keyer-Signal).
+- Low-Side Switching: Ausgang schaltet gegen Masse (GND), nicht gegen +V.
+
+## Weiterführende Links
+- HL2 Protokoll (Wiki, Hintergrund/Details): https://github.com/softerhardware/Hermes-Lite2/wiki/Protocol
+- Thetis Installation (HL2 + 3rd Party Apps, PDF): https://raw.githubusercontent.com/wiki/softerhardware/Hermes-Lite2/docs/Hermes_Lite_2_Thetis_Installation_and_3rd_Party_Apps.pdf
+- Thetis Benutzerhandbuch (allgemein): https://saure.org/cq-nrw/wp-content/uploads/2020/02/Thetis-manual-v0_2.pdf
+- Praxis-Guide (Beispiel-Setup mit Thetis): https://gw3jvb.uk/amateur-radio/a-guide-to-hermes-lite-2-mac-parallels-thetis/

@@ -1,16 +1,19 @@
-# WebUI Benutzerhandbuch
+# WebUI Benutzeranleitung
 
-Die WebUI ist bewusst minimal und smartphone-tauglich: Frequenz/Mode setzen und CW-Text/Makros senden. [file:1]
+Ziel: Einsteiger sollen typische Aufgaben „blind“ erledigen können (Starten, Konfigurieren, Testen, Logs ansehen).
 
-## Funktionen
+## Typische Aufgaben
+- Verbindung zum HL2 prüfen (IP/Port/Erreichbarkeit).
+- PTT/KEY testen (mit klarer Rückmeldung).
+- Statusanzeigen interpretieren (verbunden/nicht verbunden, Fehlerstatus).
 
-- Frequency: Setzt die HL2-Frequenz (Hz). [file:1]
-- Mode: Setzt Betriebsart (z. B. CWU/CWL/USB/LSB – je nach angebundener HL2-Library). [file:1]
-- CW Send: Übergibt Text + WPM an das IO-Board als Job (Register-Protokoll). [file:1]
-- Status: Zeigt Running/Done/Abort + Progress. [file:1]
+## Debug bei „UI tut nichts“
+- Backend-Logs ansehen (systemd/journalctl o. ä.).
+- Netzwerk prüfen: richtige HL2-IP, kein VLAN/Firewall dazwischen.
 
-## Bedienung
+## Wenn du Thetis parallel nutzt
+- Installations- und HL2-spezifische Hinweise stehen im HL2-Wiki-PDF.
+- Für die Bedienlogik (AGC, Filter, Audio): Thetis Manual.
 
-1. Backend muss laufen (Standard: `http://<pi>:8000`). [file:1]
-2. WebUI öffnen (direkt statisch oder via nginx). [file:1]
-3. "CW Send" drücken und Status beobachten. [file:1]
+## Nächster Schritt
+Wenn etwas nicht wie erwartet läuft: 05_troubleshooting.md

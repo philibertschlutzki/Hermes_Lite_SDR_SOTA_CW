@@ -1,17 +1,31 @@
 # Troubleshooting
 
-## IO-Board reagiert nicht
+Diese Seite ist symptomorientiert: Suche dein Problem und arbeite die Checks von oben nach unten ab.
 
-- Prüfen, ob IO-Board-Read/Write grundsätzlich funktioniert (Testregister). [file:1]
-- Prüfen, ob die Firmware geflasht wurde und beim Boot nicht im Error-Status hängen bleibt. [file:1]
+## Symptom: IO-Board reagiert nicht
+Checks:
+- Zuerst Minimaltest: grundlegendes Read/Write über ein Testregister.
+- Firmware-Status prüfen: Boot/Init, kein „Error“-Zustand.
 
-## PTT/KEY falsches Verhalten
+Fix:
+- Firmware korrekt flashen und erneut testen.
+- Verkabelung (GND, Versorgung, Busleitungen) systematisch prüfen.
 
-- Verdrahtung TRS: Tip/Ring/Sleeve prüfen; KEY/PTT nicht vertauschen. [file:1]
-- Sicherstellen, dass OUT1/OUT2 Low-Side genutzt wird (Kontakt nach Masse). [file:1]
-- OUT8 nicht für CW-Keying verwenden. [file:1]
+## Symptom: PTT/KEY falsches Verhalten (invertiert, vertauscht, „hängt“)
+Checks:
+- TRS-Verdrahtung Tip/Ring/Sleeve prüfen; PTT und KEY nicht vertauschen.
+- Low-Side-Konzept beachten: Ausgang schaltet gegen GND.
+- Für CW-Keying stabile Signalquelle nutzen (Keyer/Interface) und Timing/Jitter ausschließen.
 
-## WebUI/Backend keine Wirkung
+Fix:
+- Leitungstausch/Polung korrigieren.
+- Falls vorhanden: „active low/high“-Optionen in Software/Backend prüfen.
 
-- Backend-Logs prüfen (systemd/journalctl). [file:1]
-- HL2-IP/Port Konfiguration prüfen (`SOTA_CW_HL2_IP`, `SOTA_CW_HL2_PORT`). [file:1]
+## Symptom: WebUI/Backend keine Wirkung
+Checks:
+- Backend-Logs prüfen (Startfehler, Konfigfehler, Verbindungsfehler).
+- HL2-IP/Port-Konfiguration prüfen.
+
+Fix:
+- Korrekte IP/Port setzen.
+- Dienst neu starten und Logs erneut prüfen.
