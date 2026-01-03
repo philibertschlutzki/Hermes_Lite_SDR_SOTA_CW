@@ -1,65 +1,78 @@
-from __future__ import annotations
-
-from fastapi import FastAPI
-from pydantic import BaseModel, Field
-
-from .config import settings
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+from .cw_jobs import CWJobManager
+from .cw_rx import CWDecoder
 from .hl2_control import HL2Control
 from .ioboard import IOBoard
-from .cw_jobs import CWJob, submit_job, abort_job
+from .config import HL2_IP, HL2_PORT, IO_REG_BASE
 
-app = FastAPI(title="HL2 SOTA CW API")
+app = FastAPI(title="SOTA CW HL2 Backend")
 
-hl2 = HL2Control(ip=settings.hl2_ip, port=settings.hl2_port)
-io = IOBoard(reg_base=settings.io_reg_base)
+# Initialize components
+hl2 = HL2Control(HL2_IP, HL2_PORT)
+io_board = IOBoard(IO_REG_BASE)
+cw_manager = CWJobManager(io_board)
+cw_decoder = CWDecoder()
 
-
-class FrequencyRequest(BaseModel):
-    hz: int = Field(..., ge=100_000, le=60_000_000)
-
-
-class ModeRequest(BaseModel):
-    mode: str
-
-
+# Models
 class CWSendRequest(BaseModel):
     text: str
-    wpm: int = Field(20, ge=5, le=60)
-    ptt_lead_ms: int = Field(80, ge=0, le=5000)
-    ptt_tail_ms: int = Field(120, ge=0, le=5000)
-
+    wpm: int = 20
 
 @app.get("/health")
 def health():
-    return {"ok": True}
+    return {"status": "ok", "hl2": hl2.ip}
 
-
-@app.post("/hl2/frequency")
-def set_frequency(req: FrequencyRequest):
-    hl2.set_frequency_hz(req.hz)
-    return {"ok": True}
-
-
-@app.post("/hl2/mode")
-def set_mode(req: ModeRequest):
-    hl2.set_mode(req.mode)
-    return {"ok": True}
-
+# --- TX Routes ---
 
 @app.post("/cw/send")
-def cw_send(req: CWSendRequest):
-    job = CWJob(text=req.text, wpm=req.wpm, ptt_lead_ms=req.ptt_lead_ms, ptt_tail_ms=req.ptt_tail_ms)
-    submit_job(io, job)
-    return {"ok": True}
-
+def send_cw(req: CWSendRequest):
+    job_id = cw_manager.start_job(req.text, req.wpm)
+    return {"job_id": job_id, "status": "started"}
 
 @app.post("/cw/abort")
-def cw_abort():
-    abort_job(io)
-    return {"ok": True}
-
+def abort_cw():
+    cw_manager.abort_job()
+    return {"status": "aborted"}
 
 @app.get("/cw/status")
-def cw_status():
-    st = io.read_cw_status()
-    return st.__dict__
+def get_status():
+    return cw_manager.get_status()
+
+# --- RX Routes ---
+
+@app.post("/cw/rx/start")
+def start_rx():
+    """Startet den Hintergrundprozess für multimon-ng"""
+    cw_decoder.start()
+    return {"status": "rx_started"}
+
+@app.post("/cw/rx/stop")
+def stop_rx():
+    """Stoppt den Decoder"""
+    cw_decoder.stop()
+    return {"status": "rx_stopped"}
+
+@app.get("/cw/rx/text")
+def get_rx_text():
+    """Holt die letzten decodierten Textzeilen"""
+    return {
+        "lines": cw_decoder.get_text(),
+        "running": cw_decoder.running
+    }
+
+@app.post("/cw/rx/clear")
+def clear_rx_text():
+    cw_decoder.clear_text()
+    return {"status": "cleared"}
+
+# Lifecycle
+@app.on_event("startup")
+def startup_event():
+    # Optional: Auto-start decoder on boot
+    # cw_decoder.start()
+    pass
+
+@app.on_event("shutdown")
+def shutdown_event():
+    cw_decoder.stop()
