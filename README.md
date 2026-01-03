@@ -5,9 +5,10 @@ Ziel dieses Repos ist ein leichtgewichtiges Setup für SOTA/portable Betrieb mit
 - **Automatische CW-Dekodierung** und **Automatisierter QSO-Betrieb** (Bot).
 - CW-Timing lokal auf dem IO-Board (RP2040/Pico), während der Raspberry Pi nur Jobs/Parameter setzt.
 
-## Neue Features (QSO Automatisierung)
+## Neue Features (QSO Automatisierung & Headless RX)
 Das System kann nun nicht nur senden, sondern auch empfangen und selbstständig QSOs führen:
 *   **CW RX Decoder**: Nutzt `multimon-ng` im Hintergrund, um Audiosignale in Text zu wandeln.
+*   **Headless IQ Streamer**: Integriertes Python-Modul `hl2_stream` empfängt IQ-Daten direkt vom HL2, demoduliert CW und füttert den Decoder – keine externen SDR-Tools (wie Quisk/SDR++) mehr nötig!
 *   **QSO Bot**: Eine State-Machine, die CQ ruft, auf Antworten wartet, Rapporte (599) austauscht und das QSO loggt.
 
 ## Architektur
@@ -16,6 +17,7 @@ Das System kann nun nicht nur senden, sondern auch empfangen und selbstständig 
 *   **Backend**: Python FastAPI.
     *   `cw_jobs.py`: Steuert den RP2040 für perfektes Sende-Timing.
     *   `cw_rx.py`: Wrappt `multimon-ng` für den Empfang.
+    *   `hl2_stream.py`: **NEU** Direkter UDP IQ-Empfang und Demodulation.
     *   `qso_bot.py`: Logik für den QSO-Ablauf.
 *   **Hardware**: HL2 + IO-Board + Raspberry Pi.
 
@@ -26,7 +28,8 @@ Das System kann nun nicht nur senden, sondern auch empfangen und selbstständig 
     ```bash
     sudo apt update
     sudo apt install multimon-ng alsa-utils
-    # Sicherstellen, dass ein Audio-Loopback existiert (z.B. snd-aloop) wenn SDR-Software lokal läuft
+    # Für den neuen Streamer:
+    # (wird via pip install -r requirements.txt installiert: numpy)
     ```
 3.  **Firmware bauen/flashen**: siehe `firmware/pico_cw_keyer/README.md`.
 4.  **Backend starten**: siehe `pi/backend/README.md`.
@@ -44,10 +47,10 @@ Das System kann nun nicht nur senden, sondern auch empfangen und selbstständig 
 - [x] Backend API für RX-Text Stream
 - [x] Basis QSO-Bot (CQ -> Antwort -> 599 -> Log)
 
-### Phase 3: Verfeinerung (Geplant)
+### Phase 3: Verfeinerung (Laufend)
+- [x] **Audio-Pipeline**: Integration eines headless SDR-Empfängers (`hl2_stream.py`) direkt in das Startskript, um IQ-Daten ohne externe Tools zu verarbeiten.
 - [ ] **Web-UI Integration**: GUI-Elemente für Bot-Start/Stop und RX-Text-Anzeige fertigstellen.
 - [ ] **SOTA CSV Export**: Download des Logs direkt über das Web-UI.
-- [ ] **Audio-Pipeline**: Integration eines headless SDR-Empfängers (z.B. quisk oder rx_tools) direkt in das Startskript, um IQ-Daten ohne externe Tools zu verarbeiten.
 - [ ] **Erweiterte Bot-Logik**: Umgang mit "QRL?", "QRS" und RBN-Spotting.
 
 ## Lizenz / Third-Party
