@@ -69,11 +69,11 @@ Das System kann nun nicht nur senden, sondern auch empfangen und selbstständig 
 - [ ] **SOTA CSV Export**: Download des Logs direkt über das Web-UI.
 - [ ] **Erweiterte Bot-Logik**: Umgang mit "QRL?", "QRS" und RBN-Spotting.
 
-### Phase 4: TX Quality (Neu)
+### Phase 4: TX Quality
 - [x] **Deterministisches CW Timing (Firmware)**: Umstellung auf µs-basierte Delays (reduzierter Drift/Jitter im Element-Timing).
 - [x] **Farnsworth Spacing**: Element-Speed per WPM, aber vergrößerte Character/Word-Gaps über `farnsworth_wpm`.
 - [x] **Keying Weighting**: Konfigurierbare Dit/Dah-Keydown-Skalierung über `weight_pct` (50 = nominal).
-- [ ] **Envelope Shaping / Key Click Reduction**: Register/API-Unterstützung ist in diesem Repo implementiert (Default `env_rise_us=3000`, `env_fall_us=3000`); die eigentliche Amplitudenrampe muss HL2-seitig in der Gateware/DSP-Kette umgesetzt werden (siehe `third_party/README.md` → `softerhardware/Hermes-Lite2`).
+- [x] **Envelope Shaping / Key Click Reduction**: Die Gateware/DSP-Implementierung ist in [philibertschlutzki/Hermes-Lite2_DSP](https://github.com/philibertschlutzki/Hermes-Lite2_DSP) umgesetzt (siehe PR #1 dort). Details zur Schnittstelle stehen in `third_party/README.md`.
 - [ ] **QSK / Semi-BK Optimierung**: PTT/KEY Lead/Tail dynamisch (bandabhängig) und optional RX-TX „fast switch“.
 
 ## Lizenz / Third-Party
