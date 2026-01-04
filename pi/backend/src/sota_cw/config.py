@@ -1,33 +1,78 @@
-import os
+"""
+Centralized configuration using Pydantic Settings.
+Single source of truth for all configuration parameters.
+"""
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# HL2 Configuration
-HL2_IP = os.getenv("SOTA_CW_HL2_IP", "192.168.1.50")
-HL2_PORT = int(os.getenv("SOTA_CW_HL2_PORT", "1024"))
 
-# Local UDP port for HL2 control/requests.
-# 1025 is intentionally chosen so the streamer can still bind to 1024 if needed.
-HL2_LOCAL_PORT = int(os.getenv("SOTA_CW_HL2_LOCAL_PORT", "1025"))
+class Settings(BaseSettings):
+    """Application settings with environment variable support."""
+    
+    model_config = SettingsConfigDict(
+        env_prefix="SOTA_CW_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore"
+    )
+    
+    # HL2 Network Configuration
+    hl2_ip: str = Field(default="192.168.1.50", description="HL2 IP address")
+    hl2_port: int = Field(default=1024, description="HL2 UDP port")
+    hl2_local_port: int = Field(
+        default=1025, 
+        description="Local UDP port for HL2 control (1025 avoids conflict with streamer)"
+    )
+    
+    # IO Board Configuration
+    io_reg_base: int = Field(default=200, description="IO board register base address")
+    
+    # CW TX Envelope Shaping (HL2-side amplitude control)
+    # Defaults are intentionally non-zero to enable click-reduction out of the box
+    cw_env_rise_us: int = Field(default=3000, ge=0, le=20000, description="CW envelope rise time (µs)")
+    cw_env_fall_us: int = Field(default=3000, ge=0, le=20000, description="CW envelope fall time (µs)")
+    cw_env_shape: int = Field(default=0, ge=0, le=10, description="CW envelope shape index")
+    cw_env_max_amp_q15: int = Field(default=32767, ge=0, le=32767, description="CW envelope max amplitude (Q15)")
+    
+    # CW Decoder Configuration
+    use_internal_streamer: bool = Field(
+        default=True, 
+        description="Use internal Python-based streamer (no external pipe command needed)"
+    )
+    
+    cw_decoder_cmd_legacy: str = Field(
+        default="arecord -r 22050 -f S16_LE -t raw -c 1 -D default | multimon-ng -a MORSE_CW -t raw -",
+        description="Fallback command if internal streamer is disabled (legacy mode)"
+    )
+    
+    # Logging
+    log_level: str = Field(default="INFO", description="Logging level")
+    log_format: str = Field(
+        default="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        description="Log format string"
+    )
+    
+    # API Configuration
+    api_host: str = Field(default="0.0.0.0", description="API host address")
+    api_port: int = Field(default=8000, description="API port")
+    api_reload: bool = Field(default=False, description="Enable API auto-reload (dev only)")
 
-# IO Board Configuration
-IO_REG_BASE = int(os.getenv("SOTA_CW_IO_REG_BASE", "200"))
 
-# CW TX Envelope Shaping (HL2-side amplitude control)
-# Defaults are intentionally non-zero to enable click-reduction out of the box.
-CW_ENV_RISE_US = int(os.getenv("SOTA_CW_ENV_RISE_US", "3000"))
-CW_ENV_FALL_US = int(os.getenv("SOTA_CW_ENV_FALL_US", "3000"))
-CW_ENV_SHAPE = int(os.getenv("SOTA_CW_ENV_SHAPE", "0"))
-CW_ENV_MAX_AMP_Q15 = int(os.getenv("SOTA_CW_ENV_MAX_AMP_Q15", "32767"))
+# Global settings instance - single source of truth
+settings = Settings()
 
-# CW Decoder Configuration
-# Enable internal python-based streamer (no external pipe command needed)
-USE_INTERNAL_STREAMER = os.getenv("SOTA_CW_USE_INTERNAL_STREAMER", "true").lower() == "true"
-
-# Fallback command if internal streamer is disabled (legacy mode)
-# Example for ALSA default: "arecord -r 22050 -f S16_LE -t raw -c 1 | multimon-ng -a MORSE_CW -t raw -"
-CW_DECODER_CMD_LEGACY = os.getenv(
-    "SOTA_CW_DECODER_CMD", 
-    "arecord -r 22050 -f S16_LE -t raw -c 1 -D default | multimon-ng -a MORSE_CW -t raw -"
-)
+# Backwards compatibility: expose legacy names for existing code
+# TODO: Refactor modules to use settings.* directly
+HL2_IP = settings.hl2_ip
+HL2_PORT = settings.hl2_port
+HL2_LOCAL_PORT = settings.hl2_local_port
+IO_REG_BASE = settings.io_reg_base
+CW_ENV_RISE_US = settings.cw_env_rise_us
+CW_ENV_FALL_US = settings.cw_env_fall_us
+CW_ENV_SHAPE = settings.cw_env_shape
+CW_ENV_MAX_AMP_Q15 = settings.cw_env_max_amp_q15
+USE_INTERNAL_STREAMER = settings.use_internal_streamer
+CW_DECODER_CMD_LEGACY = settings.cw_decoder_cmd_legacy
 
 # Multimon-ng command for internal streamer (reads from stdin)
 CW_DECODER_CMD_INTERNAL = ["multimon-ng", "-a", "MORSE_CW", "-t", "raw", "-"]

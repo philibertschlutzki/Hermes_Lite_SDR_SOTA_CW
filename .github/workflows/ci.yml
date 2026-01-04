@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop, copilot/** ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        cd pi/backend
+        pip install -r requirements.txt
+        pip install pytest pytest-cov pytest-asyncio ruff mypy
+    
+    - name: Lint with ruff
+      run: |
+        cd pi/backend
+        ruff check src/sota_cw/
+      continue-on-error: true
+    
+    - name: Type check with mypy (optional)
+      run: |
+        cd pi/backend
+        mypy src/sota_cw/ --ignore-missing-imports
+      continue-on-error: true
+    
+    - name: Run pytest
+      run: |
+        cd pi/backend
+        pytest tests/ -v --cov=src/sota_cw --cov-report=term-missing
+      continue-on-error: true
+    
+    - name: Validate TX Quality CSV
+      run: |
+        python docs/test_reports/tools/validate_tx_quality_csv.py
+    
+    - name: Check for large VNA export files
+      run: |
+        echo "Checking for files > 5MB in test_reports/vna_exports..."
+        find docs/test_reports/vna_exports -type f -size +5M -exec ls -lh {} \; || true
+        echo "Consider using Git LFS for large files"
+      continue-on-error: true

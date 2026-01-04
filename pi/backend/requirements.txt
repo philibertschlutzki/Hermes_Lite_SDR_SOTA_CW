@@ -1,4 +1,11 @@
-fastapi
-uvicorn
-pyserial
-numpy
+# Core dependencies
+fastapi>=0.109.0
+uvicorn>=0.27.0
+pyserial>=3.5
+numpy>=1.24.0
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
+
+# Development dependencies (optional, for testing and linting)
+# Install with: pip install -r requirements.txt -r requirements-dev.txt
+# Or via Makefile: make install
