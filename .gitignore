@@ -1,15 +1,40 @@
 # Python
 __pycache__/
-*.py[cod]
-.venv/
-.env
-
-# CMake / build
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
 build/
-*.o
-*.elf
-*.uf2
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.log
+
+# Environment
+.env
+.venv/
+venv/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
 
 # OS
 .DS_Store
 Thumbs.db
+
+# QSO Logs (don't commit personal logs)
+sota_log.csv
+
+# Temporary test data (allow committing reference/example data)
+/tmp/

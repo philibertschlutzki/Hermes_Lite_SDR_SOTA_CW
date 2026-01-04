@@ -276,6 +276,110 @@ def get_bot_state():
     }
 
 
+# --- Log Export Routes ---
+
+@app.get("/log/export/csv")
+def export_log_csv():
+    """
+    Export QSO log in SOTA CSV format.
+    
+    Returns CSV file with columns: date, time, callsign, mode, sent, rcvd
+    """
+    import csv
+    from io import StringIO
+    from fastapi.responses import StreamingResponse
+    import os
+    
+    log_file = "sota_log.csv"
+    
+    if not os.path.exists(log_file):
+        raise HTTPException(status_code=404, detail="No log file found. Complete QSOs first.")
+    
+    # Read log file and return as streaming response
+    def generate():
+        with open(log_file, 'r') as f:
+            # Add header if not present
+            content = f.read()
+            if not content.startswith("date,time"):
+                yield "date,time,callsign,mode,sent,rcvd\n"
+            yield content
+    
+    return StreamingResponse(
+        generate(),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=sota_log.csv"}
+    )
+
+
+@app.get("/log/export/adif")
+def export_log_adif():
+    """
+    Export QSO log in ADIF format.
+    
+    Returns ADIF file compatible with common logging programs.
+    """
+    import os
+    from fastapi.responses import Response
+    
+    log_file = "sota_log.csv"
+    
+    if not os.path.exists(log_file):
+        raise HTTPException(status_code=404, detail="No log file found. Complete QSOs first.")
+    
+    # Convert CSV to ADIF
+    adif_records = []
+    adif_records.append("ADIF Export from SOTA CW HL2\n")
+    adif_records.append("<ADIF_VER:5>3.1.0\n")
+    adif_records.append("<PROGRAMID:11>SOTA_CW_HL2\n")
+    adif_records.append("<EOH>\n\n")
+    
+    with open(log_file, 'r') as f:
+        for line in f:
+            parts = line.strip().split(',')
+            if len(parts) >= 5:
+                date, time, call, mode, sent, rcvd = parts[0], parts[1], parts[2], parts[3], parts[4], parts[5] if len(parts) > 5 else parts[4]
+                
+                # Convert date format YYYY-MM-DD to YYYYMMDD
+                qso_date = date.replace('-', '')
+                # Time is HH:MM, convert to HHMM
+                qso_time = time.replace(':', '')
+                
+                adif_record = (
+                    f"<QSO_DATE:8>{qso_date} "
+                    f"<TIME_ON:4>{qso_time} "
+                    f"<CALL:{len(call)}>{call} "
+                    f"<MODE:{len(mode)}>{mode} "
+                    f"<RST_SENT:{len(sent)}>{sent} "
+                    f"<RST_RCVD:{len(rcvd)}>{rcvd} "
+                    "<EOR>\n"
+                )
+                adif_records.append(adif_record)
+    
+    adif_content = "".join(adif_records)
+    
+    return Response(
+        content=adif_content,
+        media_type="text/plain",
+        headers={"Content-Disposition": "attachment; filename=sota_log.adi"}
+    )
+
+
+@app.get("/log/count")
+def get_log_count():
+    """Get the number of QSOs in the log."""
+    import os
+    
+    log_file = "sota_log.csv"
+    
+    if not os.path.exists(log_file):
+        return {"count": 0, "file_exists": False}
+    
+    with open(log_file, 'r') as f:
+        count = sum(1 for line in f if line.strip())
+    
+    return {"count": count, "file_exists": True}
+
+
 # Lifecycle
 @app.on_event("startup")
 def startup_event():
