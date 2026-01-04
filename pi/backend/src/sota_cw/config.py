@@ -4,6 +4,10 @@ import os
 HL2_IP = os.getenv("SOTA_CW_HL2_IP", "192.168.1.50")
 HL2_PORT = int(os.getenv("SOTA_CW_HL2_PORT", "1024"))
 
+# Local UDP port for HL2 control/requests.
+# 1025 is intentionally chosen so the streamer can still bind to 1024 if needed.
+HL2_LOCAL_PORT = int(os.getenv("SOTA_CW_HL2_LOCAL_PORT", "1025"))
+
 # IO Board Configuration
 IO_REG_BASE = int(os.getenv("SOTA_CW_IO_REG_BASE", "200"))
 
