@@ -1,38 +1,35 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
+import logging
 
 from .cw_jobs import CWJobManager
 from .cw_rx import CWDecoder
 from .hl2_client import HL2Client
 from .hl2_control import HL2Control
 from .ioboard import IOBoard
-from .config import (
-    HL2_IP,
-    HL2_PORT,
-    HL2_LOCAL_PORT,
-    IO_REG_BASE,
-    CW_ENV_RISE_US,
-    CW_ENV_FALL_US,
-    CW_ENV_SHAPE,
-    CW_ENV_MAX_AMP_Q15,
-)
+from .config import settings
 from .qso_bot import QSOBot, BotConfig
+from .logging_config import setup_logging, get_logger
 
-app = FastAPI(title="SOTA CW HL2 Backend")
+# Initialize logging
+setup_logging()
+logger = get_logger(__name__)
+
+app = FastAPI(title="SOTA CW HL2 Backend", version="0.1.0")
 
 # Initialize HL2 client + abstractions
-hl2_client = HL2Client(HL2_IP, HL2_PORT, local_port=HL2_LOCAL_PORT)
-hl2 = HL2Control(HL2_IP, HL2_PORT, client=hl2_client, local_port=HL2_LOCAL_PORT)
-io_board = IOBoard(hl2_client, IO_REG_BASE)
+hl2_client = HL2Client(settings.hl2_ip, settings.hl2_port, local_port=settings.hl2_local_port)
+hl2 = HL2Control(settings.hl2_ip, settings.hl2_port, client=hl2_client, local_port=settings.hl2_local_port)
+io_board = IOBoard(hl2_client, settings.io_reg_base)
 
-# CW manager defaults are configurable via env vars.
+# CW manager defaults are configurable via settings
 cw_manager = CWJobManager(
     io_board,
     hl2=hl2,
-    default_env_rise_us=CW_ENV_RISE_US,
-    default_env_fall_us=CW_ENV_FALL_US,
-    default_env_shape=CW_ENV_SHAPE,
-    default_env_max_amp_q15=CW_ENV_MAX_AMP_Q15,
+    default_env_rise_us=settings.cw_env_rise_us,
+    default_env_fall_us=settings.cw_env_fall_us,
+    default_env_shape=settings.cw_env_shape,
+    default_env_max_amp_q15=settings.cw_env_max_amp_q15,
 )
 
 cw_decoder = CWDecoder()
@@ -58,10 +55,10 @@ class CWSendRequest(BaseModel):
     weight_pct: int = Field(default=50, ge=0, le=100)
 
     # Envelope shaping (HL2-side amplitude control)
-    env_rise_us: int = Field(default=CW_ENV_RISE_US, ge=0, le=20000)
-    env_fall_us: int = Field(default=CW_ENV_FALL_US, ge=0, le=20000)
-    env_shape: int = Field(default=CW_ENV_SHAPE, ge=0, le=10)
-    env_max_amp_q15: int = Field(default=CW_ENV_MAX_AMP_Q15, ge=0, le=32767)
+    env_rise_us: int = Field(default=3000, ge=0, le=20000)
+    env_fall_us: int = Field(default=3000, ge=0, le=20000)
+    env_shape: int = Field(default=0, ge=0, le=10)
+    env_max_amp_q15: int = Field(default=32767, ge=0, le=32767)
 
 
 class BotConfigRequest(BaseModel):
@@ -72,7 +69,114 @@ class BotConfigRequest(BaseModel):
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "hl2": hl2.ip}
+    """Basic health check endpoint."""
+    return {"status": "ok", "hl2_ip": settings.hl2_ip}
+
+
+@app.get("/healthz")
+def healthz():
+    """Kubernetes-style health check endpoint."""
+    return {"status": "healthy", "version": "0.1.0"}
+
+
+@app.get("/diag")
+def diagnostics():
+    """Diagnostics endpoint with system status."""
+    cw_status = cw_manager.get_status()
+    bot_state = {
+        "state": qso_bot.state.name,
+        "running": qso_bot.running,
+        "partner": qso_bot.current_partner_call,
+    }
+    
+    return {
+        "status": "ok",
+        "config": {
+            "hl2_ip": settings.hl2_ip,
+            "hl2_port": settings.hl2_port,
+            "io_reg_base": settings.io_reg_base,
+            "use_internal_streamer": settings.use_internal_streamer,
+        },
+        "cw_status": cw_status,
+        "decoder": {
+            "running": cw_decoder.running,
+            "buffer_size": len(cw_decoder.get_text()),
+        },
+        "bot": bot_state,
+    }
+
+
+@app.get("/diag/tx_test_plan")
+def tx_test_plan():
+    """
+    TX Quality Test Plan parameters and checklist.
+    
+    Returns current system configuration relevant for TX quality testing
+    with NanoVNA-H4 as described in docs/tx_quality_nanovna_h4.md
+    """
+    cw_status = cw_manager.get_status()
+    
+    # Get current frequency from HL2 (would need to track this state)
+    # For now, return placeholder - in real implementation, track last set frequency
+    current_freq_hz = 7100000  # Placeholder
+    current_band_m = 40  # Derived from freq
+    
+    return {
+        "test_plan_version": "1.0",
+        "test_plan_doc": "docs/tx_quality_nanovna_h4.md",
+        "current_configuration": {
+            "tx_mode": "CW_CARRIER",  # or CW_KEYED based on actual state
+            "band_m": current_band_m,
+            "tx_freq_hz": current_freq_hz,
+            "tx_power_setting_w": 5.0,  # HL2 typical max
+            "cw_wpm": cw_status.get("wpm", 20),
+            "cw_farnsworth_wpm": 0,  # From status if available
+            "cw_weight_pct": 50,
+            "ptt_lead_ms": cw_status.get("ptt_lead_ms", 80),
+            "ptt_tail_ms": cw_status.get("ptt_tail_ms", 120),
+            "env_rise_us": settings.cw_env_rise_us,
+            "env_fall_us": settings.cw_env_fall_us,
+            "env_max_amp_q15": settings.cw_env_max_amp_q15,
+        },
+        "recommended_attenuator": {
+            "total_db_nominal": 50.0,
+            "configuration": "20dB + 20dB + 10dB",
+            "safety_margin_db": 13.0,  # +37 dBm - 50 dB = -13 dBm (safe for VNA)
+        },
+        "test_checklist": [
+            {
+                "step": 1,
+                "name": "Attenuator Characterization",
+                "description": "Measure S21 of attenuator chain across HF",
+                "required": True,
+                "status": "pending",
+            },
+            {
+                "step": 2,
+                "name": "S11 Measurement (Matching)",
+                "description": "Measure HL2 output impedance and VSWR",
+                "required": True,
+                "status": "pending",
+            },
+            {
+                "step": 3,
+                "name": "TX Frequency Verification",
+                "description": "Verify HL2 transmits on correct frequency",
+                "required": True,
+                "status": "pending",
+            },
+            {
+                "step": 4,
+                "name": "Filter Performance (if applicable)",
+                "description": "Measure external filter S21 in-band and out-of-band",
+                "required": False,
+                "status": "pending",
+            },
+        ],
+        "csv_template": "docs/test_reports/tx_quality/templates/tx_quality_run_template.csv",
+        "validation_tool": "docs/test_reports/tools/validate_tx_quality_csv.py",
+    }
+
 
 
 # --- TX Routes ---
@@ -175,21 +279,28 @@ def get_bot_state():
 # Lifecycle
 @app.on_event("startup")
 def startup_event():
+    logger.info("Starting SOTA CW HL2 Backend")
+    logger.info(f"HL2 IP: {settings.hl2_ip}:{settings.hl2_port}")
+    logger.info(f"Internal Streamer: {settings.use_internal_streamer}")
+    
     # Ensure HL2 is running (watchdog disabled for headless operation).
     hl2.start(disable_watchdog=True)
 
     # Program default envelope once at startup.
     hl2.set_cw_envelope(
-        rise_us=CW_ENV_RISE_US,
-        fall_us=CW_ENV_FALL_US,
-        max_amp_q15=CW_ENV_MAX_AMP_Q15,
+        rise_us=settings.cw_env_rise_us,
+        fall_us=settings.cw_env_fall_us,
+        max_amp_q15=settings.cw_env_max_amp_q15,
     )
 
     cw_decoder.start()
     qso_bot.start()
+    logger.info("SOTA CW HL2 Backend started successfully")
 
 
 @app.on_event("shutdown")
 def shutdown_event():
+    logger.info("Shutting down SOTA CW HL2 Backend")
     cw_decoder.stop()
     qso_bot.stop()
+    logger.info("SOTA CW HL2 Backend shut down successfully")
