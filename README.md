@@ -73,9 +73,9 @@ Das System kann nun nicht nur senden, sondern auch empfangen und selbstständig 
 - [x] **Deterministisches CW Timing (Firmware)**: Umstellung auf µs-basierte Delays (reduzierter Drift/Jitter im Element-Timing).
 - [x] **Farnsworth Spacing**: Element-Speed per WPM, aber vergrößerte Character/Word-Gaps über `farnsworth_wpm`.
 - [x] **Keying Weighting**: Konfigurierbare Dit/Dah-Keydown-Skalierung über `weight_pct` (50 = nominal).
-- [ ] **Envelope Shaping / Key Click Reduction**: Benötigt HL2-interne TX-Amplitudensteuerung oder externe Envelope-Hardware (nicht nur GPIO KEY on/off).
+- [ ] **Envelope Shaping / Key Click Reduction**: Register/API-Unterstützung ist in diesem Repo implementiert (Default `env_rise_us=3000`, `env_fall_us=3000`); die eigentliche Amplitudenrampe muss HL2-seitig in der Gateware/DSP-Kette umgesetzt werden (siehe `third_party/README.md` → `softerhardware/Hermes-Lite2`).
 - [ ] **QSK / Semi-BK Optimierung**: PTT/KEY Lead/Tail dynamisch (bandabhängig) und optional RX-TX „fast switch“.
 
 ## Lizenz / Third-Party
 
-Siehe `third_party/README.md` für die empfohlene Einbindung der HL2-Python-Referenz.
+Siehe `third_party/README.md` für die empfohlene Einbindung der HL2-Referenz (inkl. Gateware-Repo-Verweis).

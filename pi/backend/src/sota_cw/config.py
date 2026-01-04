@@ -7,6 +7,13 @@ HL2_PORT = int(os.getenv("SOTA_CW_HL2_PORT", "1024"))
 # IO Board Configuration
 IO_REG_BASE = int(os.getenv("SOTA_CW_IO_REG_BASE", "200"))
 
+# CW TX Envelope Shaping (HL2-side amplitude control)
+# Defaults are intentionally non-zero to enable click-reduction out of the box.
+CW_ENV_RISE_US = int(os.getenv("SOTA_CW_ENV_RISE_US", "3000"))
+CW_ENV_FALL_US = int(os.getenv("SOTA_CW_ENV_FALL_US", "3000"))
+CW_ENV_SHAPE = int(os.getenv("SOTA_CW_ENV_SHAPE", "0"))
+CW_ENV_MAX_AMP_Q15 = int(os.getenv("SOTA_CW_ENV_MAX_AMP_Q15", "32767"))
+
 # CW Decoder Configuration
 # Enable internal python-based streamer (no external pipe command needed)
 USE_INTERNAL_STREAMER = os.getenv("SOTA_CW_USE_INTERNAL_STREAMER", "true").lower() == "true"

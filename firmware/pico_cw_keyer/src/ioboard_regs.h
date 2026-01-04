@@ -40,3 +40,22 @@
 // Limits
 #define TEXT_MAX_CHARS     120
 #define TEXT_MAX_REGS      ((TEXT_MAX_CHARS + 1) / 2)
+
+// -----------------------------------------------------------------------------
+// Envelope shaping / key-click reduction
+//
+// Keep REG_TEXT_BUF offset stable. Place new registers AFTER the text buffer.
+// Text buffer range: REG_TEXT_BUF .. REG_TEXT_BUF + TEXT_MAX_REGS - 1 (210..269)
+// First free CW register: 270
+// -----------------------------------------------------------------------------
+#define REG_CW_ENV_BASE         (REG_TEXT_BUF + TEXT_MAX_REGS)   // 270
+
+// Rise/Fall time in microseconds (0 => disable shaping / hard keying)
+#define REG_CW_RISE_US          (REG_CW_ENV_BASE + 0)            // 270
+#define REG_CW_FALL_US          (REG_CW_ENV_BASE + 1)            // 271
+
+// Shape selector (0=linear; future: LUT-based raised cosine)
+#define REG_CW_ENV_SHAPE        (REG_CW_ENV_BASE + 2)            // 272
+
+// Max amplitude scaler (Q1.15: 0..32767 maps to 0.0..~1.0)
+#define REG_CW_ENV_MAX_AMP_Q15  (REG_CW_ENV_BASE + 3)            // 273
