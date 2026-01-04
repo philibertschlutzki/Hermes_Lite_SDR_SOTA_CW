@@ -84,6 +84,12 @@ int main(void) {
   reg_write(REG_FARNSWORTH_WPM, 0); // 0 => same as REG_CW_WPM
   reg_write(REG_WEIGHT_PCT, 50);    // 50 => nominal
 
+  // Envelope shaping defaults (used by HL2-side TX amplitude control)
+  reg_write(REG_CW_RISE_US, 3000);
+  reg_write(REG_CW_FALL_US, 3000);
+  reg_write(REG_CW_ENV_SHAPE, 0);
+  reg_write(REG_CW_ENV_MAX_AMP_Q15, 32767);
+
   while (true) {
     uint16_t cmd = reg_read(REG_CW_CMD);
 

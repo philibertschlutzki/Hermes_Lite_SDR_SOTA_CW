@@ -1,10 +1,19 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
+
 from .cw_jobs import CWJobManager
 from .cw_rx import CWDecoder
 from .hl2_control import HL2Control
 from .ioboard import IOBoard
-from .config import HL2_IP, HL2_PORT, IO_REG_BASE
+from .config import (
+    HL2_IP,
+    HL2_PORT,
+    IO_REG_BASE,
+    CW_ENV_RISE_US,
+    CW_ENV_FALL_US,
+    CW_ENV_SHAPE,
+    CW_ENV_MAX_AMP_Q15,
+)
 from .qso_bot import QSOBot, BotConfig
 
 app = FastAPI(title="SOTA CW HL2 Backend")
@@ -12,7 +21,16 @@ app = FastAPI(title="SOTA CW HL2 Backend")
 # Initialize components
 hl2 = HL2Control(HL2_IP, HL2_PORT)
 io_board = IOBoard(IO_REG_BASE)
-cw_manager = CWJobManager(io_board)
+
+# CW manager defaults are configurable via env vars.
+cw_manager = CWJobManager(
+    io_board,
+    default_env_rise_us=CW_ENV_RISE_US,
+    default_env_fall_us=CW_ENV_FALL_US,
+    default_env_shape=CW_ENV_SHAPE,
+    default_env_max_amp_q15=CW_ENV_MAX_AMP_Q15,
+)
+
 cw_decoder = CWDecoder()
 
 # Bot Default Config
@@ -40,6 +58,13 @@ class CWSendRequest(BaseModel):
     # Keying weight percent: 50 nominal.
     weight_pct: int = Field(default=50, ge=0, le=100)
 
+    # Envelope shaping (HL2-side amplitude control)
+    # Default is enabled (3000/3000 us) via config/env.
+    env_rise_us: int = Field(default=CW_ENV_RISE_US, ge=0, le=20000)
+    env_fall_us: int = Field(default=CW_ENV_FALL_US, ge=0, le=20000)
+    env_shape: int = Field(default=CW_ENV_SHAPE, ge=0, le=10)
+    env_max_amp_q15: int = Field(default=CW_ENV_MAX_AMP_Q15, ge=0, le=32767)
+
 
 class BotConfigRequest(BaseModel):
     my_call: str
@@ -56,7 +81,6 @@ def health():
 
 @app.post("/cw/send")
 def send_cw(req: CWSendRequest):
-    # CWJobManager already accepts a CWJob dataclass; keep API stable by mapping parameters here.
     job_id = cw_manager.start_job(
         req.text,
         req.wpm,
@@ -64,6 +88,10 @@ def send_cw(req: CWSendRequest):
         ptt_tail_ms=req.ptt_tail_ms,
         farnsworth_wpm=req.farnsworth_wpm,
         weight_pct=req.weight_pct,
+        env_rise_us=req.env_rise_us,
+        env_fall_us=req.env_fall_us,
+        env_shape=req.env_shape,
+        env_max_amp_q15=req.env_max_amp_q15,
     )
     return {"job_id": job_id, "status": "started"}
 
