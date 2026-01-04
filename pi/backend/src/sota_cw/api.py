@@ -1,5 +1,5 @@
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from .cw_jobs import CWJobManager
 from .cw_rx import CWDecoder
 from .hl2_control import HL2Control
@@ -17,7 +17,7 @@ cw_decoder = CWDecoder()
 
 # Bot Default Config
 default_bot_config = BotConfig(
-    my_call="NOCALL", # User must configure this
+    my_call="NOCALL",  # User must configure this
     my_ref="",
     wpm=20
 )
@@ -28,34 +28,56 @@ qso_bot = QSOBot(cw_manager, cw_decoder, default_bot_config)
 class CWSendRequest(BaseModel):
     text: str
     wpm: int = 20
-    # TX quality-related timing controls
+
+    # Optional: refine TX timing / readability
     ptt_lead_ms: int = 80
     ptt_tail_ms: int = 120
+
+    # Farnsworth spacing: slows down gaps while keeping element speed at wpm.
+    # 0 means "same as wpm".
+    farnsworth_wpm: int = Field(default=0, ge=0, le=60)
+
+    # Keying weight percent: 50 nominal.
+    weight_pct: int = Field(default=50, ge=0, le=100)
+
 
 class BotConfigRequest(BaseModel):
     my_call: str
     my_ref: str
     wpm: int
 
+
 @app.get("/health")
 def health():
     return {"status": "ok", "hl2": hl2.ip}
+
 
 # --- TX Routes ---
 
 @app.post("/cw/send")
 def send_cw(req: CWSendRequest):
-    job_id = cw_manager.start_job(req.text, req.wpm, req.ptt_lead_ms, req.ptt_tail_ms)
+    # CWJobManager already accepts a CWJob dataclass; keep API stable by mapping parameters here.
+    job_id = cw_manager.start_job(
+        req.text,
+        req.wpm,
+        ptt_lead_ms=req.ptt_lead_ms,
+        ptt_tail_ms=req.ptt_tail_ms,
+        farnsworth_wpm=req.farnsworth_wpm,
+        weight_pct=req.weight_pct,
+    )
     return {"job_id": job_id, "status": "started"}
+
 
 @app.post("/cw/abort")
 def abort_cw():
     cw_manager.abort_job()
     return {"status": "aborted"}
 
+
 @app.get("/cw/status")
 def get_status():
     return cw_manager.get_status()
+
 
 # --- RX Routes ---
 
@@ -65,11 +87,13 @@ def start_rx():
     cw_decoder.start()
     return {"status": "rx_started"}
 
+
 @app.post("/cw/rx/stop")
 def stop_rx():
     """Stoppt den Decoder"""
     cw_decoder.stop()
     return {"status": "rx_stopped"}
+
 
 @app.get("/cw/rx/text")
 def get_rx_text():
@@ -79,10 +103,12 @@ def get_rx_text():
         "running": cw_decoder.running
     }
 
+
 @app.post("/cw/rx/clear")
 def clear_rx_text():
     cw_decoder.clear_text()
     return {"status": "cleared"}
+
 
 # --- Bot Routes ---
 
@@ -93,17 +119,20 @@ def configure_bot(config: BotConfigRequest):
     qso_bot.config.wpm = config.wpm
     return {"status": "configured", "config": qso_bot.config}
 
+
 @app.post("/bot/start")
 def start_bot():
     """Starts the bot thread (IDLE state)"""
     qso_bot.start()
     return {"status": "bot_started"}
 
+
 @app.post("/bot/stop")
 def stop_bot():
     """Stops the bot thread"""
     qso_bot.stop()
     return {"status": "bot_stopped"}
+
 
 @app.post("/bot/cq")
 def trigger_cq():
@@ -112,6 +141,7 @@ def trigger_cq():
         raise HTTPException(status_code=400, detail="Bot not running. Call /bot/start first.")
     qso_bot.trigger_cq()
     return {"status": "cq_triggered"}
+
 
 @app.get("/bot/state")
 def get_bot_state():
@@ -129,6 +159,7 @@ def startup_event():
     cw_decoder.start()
     # Start Bot thread (IDLE)
     qso_bot.start()
+
 
 @app.on_event("shutdown")
 def shutdown_event():
