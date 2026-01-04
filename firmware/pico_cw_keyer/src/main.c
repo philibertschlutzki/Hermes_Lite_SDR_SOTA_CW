@@ -41,9 +41,14 @@ static char text_get_char(uint16_t idx) {
   return (char)(word & 0xFF);
 }
 
-static void key_down(uint32_t ms) {
+static inline void sleep_us_exact(uint32_t us) {
+  // Avoid tight busy-wait loops. Use absolute time to reduce drift.
+  sleep_until(delayed_by_us(get_absolute_time(), (int64_t)us));
+}
+
+static void key_down_us(uint32_t us) {
   outputs_set_key(true);
-  sleep_ms(ms);
+  sleep_us_exact(us);
   outputs_set_key(false);
 }
 
@@ -57,10 +62,10 @@ static void send_char(char c, cw_timing_t t) {
 
   for (const char* p = pat; *p; ++p) {
     if (check_abort()) return;
-    if (*p == '.') key_down(t.dit_ms);
-    else if (*p == '-') key_down(t.dah_ms);
+    if (*p == '.') key_down_us(t.dit_us);
+    else if (*p == '-') key_down_us(t.dah_us);
     if (check_abort()) return;
-    sleep_ms(t.intra_symbol_ms);
+    sleep_us_exact(t.intra_symbol_us);
   }
 }
 
@@ -76,6 +81,8 @@ int main(void) {
   reg_write(REG_PTT_TAIL_MS, 120);
   reg_write(REG_TEXT_LEN, 0);
   reg_write(REG_PROGRESS, 0);
+  reg_write(REG_FARNSWORTH_WPM, 0); // 0 => same as REG_CW_WPM
+  reg_write(REG_WEIGHT_PCT, 50);    // 50 => nominal
 
   while (true) {
     uint16_t cmd = reg_read(REG_CW_CMD);
@@ -87,6 +94,9 @@ int main(void) {
 
     // Latch parameters
     uint16_t wpm = reg_read(REG_CW_WPM);
+    uint16_t farn = reg_read(REG_FARNSWORTH_WPM);
+    uint16_t weight = reg_read(REG_WEIGHT_PCT);
+
     uint16_t lead = reg_read(REG_PTT_LEAD_MS);
     uint16_t tail = reg_read(REG_PTT_TAIL_MS);
     uint16_t len  = reg_read(REG_TEXT_LEN);
@@ -98,6 +108,8 @@ int main(void) {
     }
 
     cw_timing_t timing = cw_timing_from_wpm(wpm);
+    cw_apply_farnsworth(&timing, wpm, farn);
+    cw_apply_weight(&timing, weight);
 
     reg_write(REG_PROGRESS, 0);
     set_status(CW_STATUS_RUNNING, 0);
@@ -114,10 +126,10 @@ int main(void) {
       if (c == 0) break;
 
       if (cw_is_word_gap(c)) {
-        sleep_ms(timing.inter_word_ms);
+        sleep_us_exact(timing.inter_word_us);
       } else {
         send_char(c, timing);
-        sleep_ms(timing.inter_char_ms);
+        sleep_us_exact(timing.inter_char_us);
       }
 
       reg_write(REG_PROGRESS, i + 1);

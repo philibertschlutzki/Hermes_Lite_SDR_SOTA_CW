@@ -12,18 +12,6 @@ Das System kann nun nicht nur senden, sondern auch empfangen und selbstständig 
 *   **FIR-Filtering**: Integrierte Signalverarbeitung für saubere CW-Töne und besseres SNR.
 *   **QSO Bot**: Eine State-Machine, die CQ ruft, auf Antworten wartet, Rapporte (599) austauscht und das QSO loggt.
 
-## TX Signalqualität
-Der Senderpfad ist so aufgebaut, dass das IO-Board das **deterministische** CW-Timing macht und der Pi nur Parameter/Jobs setzt.
-
-Aktuell (Backend/IO-Board Interface):
-- Konfigurierbares PTT-Pre-Delay und Tail-Delay pro Job (`ptt_lead_ms`, `ptt_tail_ms`) zur sauberen TX/RX-Umschaltung.
-- Konsistente TX-Job-Steuerung über `CWJobManager` (FastAPI -> IO-Board Register).
-
-Geplant (Firmware-seitig, siehe Roadmap):
-- Envelope shaping (Rise/Fall) zur Reduktion von Key-Clicks.
-- Phasenkohärentes Keying (Amplitude rammen, Carrier/NCO läuft durch).
-- Definierte TX-Enable-Settling-Zeiten (TX enable -> settle -> keying).
-
 ## Repository Struktur
 
 ```
@@ -62,20 +50,6 @@ Geplant (Firmware-seitig, siehe Roadmap):
     *   Standardmäßig ist nun der interne Streamer aktiviert (`USE_INTERNAL_STREAMER=True`).
 5.  **WebUI öffnen**: siehe `pi/webui/README.md`.
 
-## API (TX)
-
-`POST /cw/send`
-
-Beispiel:
-```json
-{
-  "text": "CQ CQ SOTA DE ...",
-  "wpm": 20,
-  "ptt_lead_ms": 80,
-  "ptt_tail_ms": 120
-}
-```
-
 ## Feature Roadmap
 
 ### Phase 1: Basics (Abgeschlossen)
@@ -95,12 +69,12 @@ Beispiel:
 - [ ] **SOTA CSV Export**: Download des Logs direkt über das Web-UI.
 - [ ] **Erweiterte Bot-Logik**: Umgang mit "QRL?", "QRS" und RBN-Spotting.
 
-### Phase 4: TX Signalqualität (Neu)
-- [x] API/Backend: PTT lead/tail pro TX-Job (`ptt_lead_ms`, `ptt_tail_ms`).
-- [ ] Firmware: CW Envelope Shaping (konfigurierbare Rise/Fall-Rampen) zur Reduktion von Key-Clicks.
-- [ ] Firmware: Phase-coherent CW (nur Amplitude rammen; Carrier läuft durch), um Chirp/Spurs zu minimieren.
-- [ ] Firmware: TX/RX Sequencing (TX-Enable -> settle -> keying; ramp-down -> settle -> RX).
-- [ ] Mess-/Verifikationsmodus: reproduzierbare Bewertung der Aussendungsqualität (Timing-Logs/Parameter).
+### Phase 4: TX Quality (Neu)
+- [x] **Deterministisches CW Timing (Firmware)**: Umstellung auf µs-basierte Delays (reduzierter Drift/Jitter im Element-Timing).
+- [x] **Farnsworth Spacing**: Element-Speed per WPM, aber vergrößerte Character/Word-Gaps über `farnsworth_wpm`.
+- [x] **Keying Weighting**: Konfigurierbare Dit/Dah-Keydown-Skalierung über `weight_pct` (50 = nominal).
+- [ ] **Envelope Shaping / Key Click Reduction**: Benötigt HL2-interne TX-Amplitudensteuerung oder externe Envelope-Hardware (nicht nur GPIO KEY on/off).
+- [ ] **QSK / Semi-BK Optimierung**: PTT/KEY Lead/Tail dynamisch (bandabhängig) und optional RX-TX „fast switch“.
 
 ## Lizenz / Third-Party
 
