@@ -8,6 +8,7 @@ CW_CMD_IDLE = 0
 CW_CMD_START = 1
 CW_CMD_ABORT = 2
 
+
 @dataclass
 class CWJob:
     text: str
@@ -46,3 +47,65 @@ def submit_job(io: IOBoard, job: CWJob) -> None:
 
 def abort_job(io: IOBoard) -> None:
     io.write_reg(io.reg_base + 0, CW_CMD_ABORT)
+
+
+class CWJobManager:
+    """High-level TX job API used by FastAPI.
+
+    The backend stays state-light: the IO board is the authority for execution/state.
+    """
+
+    def __init__(self, io: IOBoard):
+        self.io = io
+        self._job_seq = 0
+        self._current_job_id: int | None = None
+
+    def start_job(
+        self,
+        text: str,
+        wpm: int = 20,
+        ptt_lead_ms: int = 80,
+        ptt_tail_ms: int = 120,
+    ) -> int:
+        self._job_seq += 1
+        job_id = self._job_seq
+
+        submit_job(
+            self.io,
+            CWJob(
+                text=text,
+                wpm=int(wpm),
+                ptt_lead_ms=int(ptt_lead_ms),
+                ptt_tail_ms=int(ptt_tail_ms),
+            ),
+        )
+
+        self._current_job_id = job_id
+        return job_id
+
+    def abort_job(self) -> None:
+        abort_job(self.io)
+
+    def get_status(self) -> dict:
+        # IO wiring might not be available in unit tests/dev without HL2 library.
+        try:
+            s = self.io.read_cw_status()
+        except NotImplementedError:
+            return {
+                "wired": False,
+                "job_id": self._current_job_id,
+                "error": "IOBoard read_reg/write_reg not wired (see third_party/README.md)",
+            }
+
+        return {
+            "wired": True,
+            "job_id": self._current_job_id,
+            "cmd": s.cmd,
+            "status": s.status,
+            "wpm": s.wpm,
+            "ptt_lead_ms": s.ptt_lead_ms,
+            "ptt_tail_ms": s.ptt_tail_ms,
+            "text_len": s.text_len,
+            "progress": s.progress,
+            "error_code": s.error_code,
+        }

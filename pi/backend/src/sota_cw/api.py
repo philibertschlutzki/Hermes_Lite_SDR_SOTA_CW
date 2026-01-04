@@ -28,6 +28,9 @@ qso_bot = QSOBot(cw_manager, cw_decoder, default_bot_config)
 class CWSendRequest(BaseModel):
     text: str
     wpm: int = 20
+    # TX quality-related timing controls
+    ptt_lead_ms: int = 80
+    ptt_tail_ms: int = 120
 
 class BotConfigRequest(BaseModel):
     my_call: str
@@ -42,7 +45,7 @@ def health():
 
 @app.post("/cw/send")
 def send_cw(req: CWSendRequest):
-    job_id = cw_manager.start_job(req.text, req.wpm)
+    job_id = cw_manager.start_job(req.text, req.wpm, req.ptt_lead_ms, req.ptt_tail_ms)
     return {"job_id": job_id, "status": "started"}
 
 @app.post("/cw/abort")
