@@ -77,5 +77,5 @@ Das System kann nun nicht nur senden, sondern auch empfangen und selbstständig 
 - [ ] **QSK / Semi-BK Optimierung**: PTT/KEY Lead/Tail dynamisch (bandabhängig) und optional RX-TX „fast switch“.
 
 ## Lizenz / Third-Party
-
+Anleitung für Zusammenbau Hermes Lite 2: https://github.com/softerhardware/Hermes-Lite2/wiki
 Siehe `third_party/README.md` für die empfohlene Einbindung der HL2-Referenz (inkl. Gateware-Repo-Verweis).
