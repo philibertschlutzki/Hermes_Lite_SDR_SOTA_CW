@@ -1,37 +1,51 @@
 # Überblick: Hermes Lite SDR SOTA CW
 
-Diese Dokumentation beschreibt, wie dieses Projekt mit einem Hermes-Lite-2 (HL2) und (optional) einem IO-Board so eingerichtet wird, dass CW/Keying/PTT und die Bedienung reproduzierbar funktionieren.
+Dieses Projekt betreibt einen **Hermes-Lite 2 (HL2)** headless über einen **Raspberry Pi 4B** und bedient ihn per Browser von einem **Android-Tablet**. Schwerpunkt ist CW im SOTA-Portabelbetrieb, dazu kommen Digitalmodi über WSJT-X und fldigi.
 
-## Für wen ist das?
-- Anfänger: Schritt-für-Schritt bis zum ersten Test.
-- Fortgeschrittene: Protokoll-/Registerdetails und Debug-Hinweise.
+> **Projektstand:** Mehrere Teile sind noch nicht funktionsfähig (u. a. Filterumschaltung, SWR-Schutz, Audio-Pfad, IO-Board-Anbindung). Was umgesetzt ist und was fehlt, steht in [06_architecture.md](06_architecture.md) und [07_known_gaps.md](07_known_gaps.md). Bitte vor dem ersten Sendeversuch lesen.
 
-## Was wird hier dokumentiert?
-- Hardware-Verdrahtung (HL2 ↔ IO-Board ↔ Key/PTT/Peripherie)
-- Bring-up Checkliste (Strom, Netzwerk, Firmware, Funktionstests)
-- Register-/Protokollkonzept des IO-Boards (für Entwickler/Debug)
-- WebUI: typische Bedienabläufe
-- Troubleshooting: typische Fehlerbilder + Checks
+## Komponenten
 
-## Voraussetzungen (Minimum)
-- Ein funktionsfähiger Hermes-Lite-2 (Netzwerk erreichbar, RX/TX grundsätzlich möglich)
-- Ein PC im selben Netzwerk (für WebUI/SDR-Software)
-- Optional: IO-Board, falls PTT/KEY/GPIO über Register gesteuert werden
+- **HL2** mit N2ADR-Filterboard (Tiefpässe 160–10 m, 3-MHz-Hochpass)
+- **IO-Board** mit Raspberry Pi Pico (RP2040), optional
+- **Raspberry Pi 4B** mit FastAPI-Backend, nginx, PipeWire, WSJT-X und fldigi
+- **Android-Tablet** mit Browser als Bedienoberfläche
+
+## Dokumente
+
+| Datei | Inhalt | Für wen |
+|---|---|---|
+| [01_hardware_wiring.md](01_hardware_wiring.md) | Verkabelung HL2, IO-Board, Pi, Key/PTT | alle |
+| [02_bringup_checklist.md](02_bringup_checklist.md) | Inbetriebnahme Schritt für Schritt | alle |
+| [04_webui_user_guide.md](04_webui_user_guide.md) | Bedienung am Tablet | alle |
+| [05_troubleshooting.md](05_troubleshooting.md) | Fehlerbilder und Checks | alle |
+| [03_ioboard_register_protocol.md](03_ioboard_register_protocol.md) | IO-Board-Zugriff und CW-Registermap | Entwickler |
+| [06_architecture.md](06_architecture.md) | Systemarchitektur, Ziel vs. Ist-Stand | Entwickler |
+| [07_known_gaps.md](07_known_gaps.md) | Liste der bekannten Abweichungen | Entwickler |
+| [tx_quality_nanovna_h4.md](tx_quality_nanovna_h4.md) | TX-Qualitätstest mit NanoVNA-H4 | Messung |
+| [test_reports/](test_reports/README.md) | Messprotokolle und CSV-Schema | Messung |
+| [IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md) | Änderungsbericht vom 2026-01-04 (historisch) | Entwickler |
 
 ## Empfohlene Leseroute
-1. 01_hardware_wiring.md
-2. 02_bringup_checklist.md
-3. 04_webui_user_guide.md
-4. 05_troubleshooting.md
-5. 03_ioboard_register_protocol.md (nur wenn du Register/Backend debuggen oder erweitern willst)
 
-## Begriffsklärung (kurz)
-- PTT: „Push To Talk“, schaltet Senden ein/aus.
-- KEY: CW-Tastung (Morsetaste/Keyer-Signal).
-- Low-Side Switching: Ausgang schaltet gegen Masse (GND), nicht gegen +V.
+1. [01_hardware_wiring.md](01_hardware_wiring.md)
+2. [02_bringup_checklist.md](02_bringup_checklist.md)
+3. [04_webui_user_guide.md](04_webui_user_guide.md)
+4. [05_troubleshooting.md](05_troubleshooting.md)
+5. [06_architecture.md](06_architecture.md) und [03_ioboard_register_protocol.md](03_ioboard_register_protocol.md), wenn du am Backend oder an der Firmware arbeitest
+
+## Begriffe
+
+- **PTT** (Push To Talk): schaltet den Sender ein/aus.
+- **KEY**: CW-Tastung. Am HL2 über die 3,5-mm-Buchse CN4 (Tip).
+- **MOX**: Sendebit im openHPSDR-Protokoll (C0 Bit 0), per Software gesetzt.
+- **Low-Side-Switching**: Ein Ausgang schaltet gegen Masse (GND), nicht gegen +V.
+- **C&C**: Command & Control, die Steuerbytes C0–C4 im openHPSDR-Protocol-1-Frame.
+- **EP2 / EP6**: Datenkanäle Host → HL2 (TX-IQ + C&C) bzw. HL2 → Host (RX-IQ + Telemetrie).
 
 ## Weiterführende Links
-- HL2 Protokoll (Wiki, Hintergrund/Details): https://github.com/softerhardware/Hermes-Lite2/wiki/Protocol
-- Thetis Installation (HL2 + 3rd Party Apps, PDF): https://raw.githubusercontent.com/wiki/softerhardware/Hermes-Lite2/docs/Hermes_Lite_2_Thetis_Installation_and_3rd_Party_Apps.pdf
-- Thetis Benutzerhandbuch (allgemein): https://saure.org/cq-nrw/wp-content/uploads/2020/02/Thetis-manual-v0_2.pdf
-- Praxis-Guide (Beispiel-Setup mit Thetis): https://gw3jvb.uk/amateur-radio/a-guide-to-hermes-lite-2-mac-parallels-thetis/
+
+- HL2 Protokoll: https://github.com/softerhardware/Hermes-Lite2/wiki/Protocol
+- HL2 I2C (Filterboard, IO-Board): https://github.com/softerhardware/Hermes-Lite2/wiki/Thetis-I2C-Control
+- HL2 IO-Pins: https://github.com/softerhardware/Hermes-Lite2/wiki/IO
+- Thetis mit HL2 (PDF, nützlich zum Gegentest am PC): https://raw.githubusercontent.com/wiki/softerhardware/Hermes-Lite2/docs/Hermes_Lite_2_Thetis_Installation_and_3rd_Party_Apps.pdf

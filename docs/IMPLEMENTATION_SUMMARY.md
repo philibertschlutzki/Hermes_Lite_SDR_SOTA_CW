@@ -1,5 +1,7 @@
 # Implementation Summary: TX Quality Testing & Technical Consistency
 
+> **Historisches Dokument** (Stand 2026-01-04). Der aktuelle Stand der Architektur und offene Abweichungen stehen in [06_architecture.md](06_architecture.md) und [07_known_gaps.md](07_known_gaps.md).
+
 **Date**: 2026-01-04  
 **PR**: Add TX Quality Test Plan and Technical Consistency Improvements
 

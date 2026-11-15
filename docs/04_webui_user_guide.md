@@ -2,6 +2,8 @@
 
 Diese Web-Applikation ist speziell für die ergonomische Touch-Bedienung auf einem **Android Tablet** im portablen SOTA- oder Stationsbetrieb optimiert. Sämtliche SDR-Prozesse laufen headless auf dem Raspberry Pi 4B.
 
+> **Stand der Funktionen:** Die Oberfläche ist vollständig, einige Anzeigen und Aktionen haben im Backend aber noch keine Wirkung. Sie sind unten mit ⚠️ markiert. Details: [07_known_gaps.md](07_known_gaps.md).
+
 ---
 
 ## 1. Schnellzugriff & Übersicht
@@ -10,7 +12,7 @@ Diese Web-Applikation ist speziell für die ergonomische Touch-Bedienung auf ein
 ```text
 http://<IP-des-Raspberry-Pi>/
 ```
-*(Empfehlung: Über das Browser-Menü **„Zum Startbildschirm hinzufügen“** wählen, um die App im vollen Vollbildmodus als PWA ohne störende URL-Leiste zu betreiben).*
+*(Tipp: Über das Browser-Menü **„Zum Startbildschirm hinzufügen“** eine Verknüpfung anlegen. Ein Web-App-Manifest fehlt noch, deshalb öffnet sie als normaler Browser-Tab, nicht als Vollbild-PWA.)*
 
 ---
 
@@ -18,18 +20,19 @@ http://<IP-des-Raspberry-Pi>/
 
 - **Große Frequenzanzeige (VFO):** Zeigt die aktuelle Arbeitsfrequenz in Hertz an.
 - **Schnellband-Tasten:** Direkter Wechsel auf 160m, 80m, 60m, 40m, 30m, 20m, 17m, 15m, 12m oder 10m.
-  - Das N2ADR Filter Board schaltet dabei automatisch das passende Tiefpass- und Hochpassrelais.
-  - Das HL2 IO-Board aktualisiert automatisch seine Band-Ausgänge.
+  - Ziel: Das N2ADR-Filterboard schaltet das passende Tief- und Hochpassrelais, das IO-Board seine Bandausgänge.
+  - ⚠️ Derzeit wird das Relaiswort an die falsche C&C-Adresse geschickt; die Filter schalten nicht um (G2). Bis zur Korrektur nicht senden.
 - **Schrittweiten (-1k, -100, +100, +1k):** Schnelles Abstimmen mit großen Touch-Zielen.
 - **FWD PWR & VSWR Meter:** 
-  - Zeigt live die Vorwärtsleistung in Watt und das Stehwellenverhältnis (VSWR).
-  - Farbcodierung: Grün ($\le 1.5$), Gelb ($1.6 - 2.5$), Rot ($> 2.5$).
-  - *Schutzabschaltung:* Bei VSWR $> 3.0$ wird das Senden sofort unterbrochen.
-- **TUNE ATU Button:** Startet den Abstimmzyklus eines externen Antennentuners (z. B. Icom AH-4) über das IO-Board.
+  - Zeigt Vorwärtsleistung in Watt und Stehwellenverhältnis (VSWR).
+  - Farbcodierung: Grün (≤ 1,5), Gelb (bis 2,5), Rot (> 2,5).
+  - ⚠️ Die HL2-Telemetrie wird noch nicht ausgewertet; die Anzeige steht fest auf SWR 1,0 und 0 W. Eine automatische Abschaltung bei VSWR > 3,0 ist geplant, aber nicht umgesetzt (G4).
+- **TUNE ATU Button:** Startet den Abstimmzyklus eines externen Antennentuners (z. B. Icom AH-4) über das IO-Board. ⚠️ Hängt von der IO-Board-Anbindung ab (G7, G12).
 - **PTT Button (RX/TX):** Manuelles Umschalten des Senders mit roter optischer Sende-Warnung.
 - **RX Audio Stream:** 
-  - Antippen von **„🔊 RX Audio“** startet die direkte, verzögerungsarme Audioausgabe über die internen Lautsprecher des Android Tablets via WebSocket.
+  - Antippen von **„🔊 RX Audio“** startet die Audioausgabe auf dem Tablet über WebSocket (16-bit-PCM).
   - Über den Schieberegler wird die Wiedergabelautstärke geregelt.
+  - ⚠️ Das Backend speist noch kein Audio in den Stream ein; es bleibt still (A1, A3).
 - **SOTA Kontrast-Modus:** 
   - Umschalter zwischen **Dunkel-Modus** und **Outdoor-Modus** (starker Schwarz-Weiß-Kontrast für den Einsatz bei grellem Sonnenlicht auf Berggipfeln).
 
@@ -39,11 +42,13 @@ http://<IP-des-Raspberry-Pi>/
 
 ### Tab 1: CW Cockpit (Reiner Text-Morser)
 - **CW Empfang (RX):** 
-  - Automatische Dekodierung empfangener Morsesignale in Echtzeit.
+  - Automatische Dekodierung empfangener Morsesignale mit `multimon-ng`.
+  - ⚠️ IQ-Format und Samplerate passen noch nicht zum HL2; der Decoder liefert derzeit keinen sinnvollen Text (G5, A4).
   - Automatisches Scrollen im Terminalfenster.
 - **CW Senden (TX via Pico Keyer):**
   - Text eingeben und mit **„Senden (TX)“** oder Enter abschicken.
-  - Der Raspberry Pi Pico auf dem IO-Board sorgt für absolut mikrofeines, jitterfreies Timing.
+  - Ziel: Der Pico erzeugt das Morse-Timing in Hardware, unabhängig von Linux-Latenzen.
+  - ⚠️ Die Übertragung des Textes vom Pi zum Pico funktioniert noch nicht (G7, G8).
   - **SOTA Schnell-Makros:** Ein-Klick-Tasten für `CQ SOTA`, `599 BK`, `TU 73`, `QRL?`, `AGN?`, `QRZ?`.
 - **Keyer Parameter:**
   - Tempo (WPM): Schieberegler von 10 bis 40 WPM.
@@ -54,7 +59,8 @@ http://<IP-des-Raspberry-Pi>/
 ---
 
 ### Tab 2: WSJT-X (FT8 / FT4 / WSPR / FST4)
-- **Statusanzeige:** Grüner Punkt signalisiert aktive Verbindung zum WSJT-X Headless-Daemon auf dem Pi.
+- **Statusanzeige:** Grüner Punkt signalisiert aktive UDP-Verbindung zu WSJT-X auf dem Pi (läuft unter Xvfb).
+- ⚠️ Empfangs- und Sendeaudio zwischen HL2 und WSJT-X fehlen noch; Decodes kommen erst, wenn WSJT-X Audio bekommt (A1, A2).
 - **Live Bandaktivitäts-Tabelle:**
   - Zeigt alle empfangenen Signale der Periode mit UTC-Zeit, Signalstärke in dB (SNR), Zeitversatz (DT) und NF-Frequenz.
   - CQ-Rufe werden farblich hervorgehoben.
@@ -65,7 +71,8 @@ http://<IP-des-Raspberry-Pi>/
 ---
 
 ### Tab 3: PSK31 / RTTY
-- **Modem-Auswahl:** Schnelles Umschalten zwischen `BPSK-31`, `QPSK-31`, `RTTY` (45.45 Baud / 170 Hz Shift) und `CW` (fldigi DSP).
+- **Modem-Auswahl:** Umschalten zwischen `BPSK-31`, `QPSK-31`, `RTTY` (45,45 Baud / 170 Hz Shift) und `CW` (fldigi DSP).
+- ⚠️ Wie bei WSJT-X fehlt der Audiopfad zum HL2 (A1, A2).
 - **Text-Terminal:** Kontinuierlicher Zeichenstrom beim Empfang.
 - **Sende-Puffer:** Text vorab eintippen und mit einem Klick aussenden.
 - **Digitale Makros:** Vordefinierte Texte für Rapport- und Abschluss-Meldungen.
@@ -81,5 +88,5 @@ http://<IP-des-Raspberry-Pi>/
 ### Tab 5: SOTA Log & Export
 - Listet alle protokollierten QSOs auf.
 - Direkte Download-Buttons für:
-  - **SOTA CSV:** Speziell formatiert für den Direkt-Upload in die SOTA Database.
+  - **SOTA CSV:** Für den Upload in die SOTA-Datenbank (Format vor dem ersten Upload mit einem Test-Log prüfen).
   - **ADIF (.adi):** Standardformat für jedes Logbuchprogramm (z. B. Log4OM, Cloudlog, QRZ.com).
