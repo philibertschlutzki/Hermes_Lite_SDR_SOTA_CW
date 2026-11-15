@@ -2,75 +2,297 @@
 <html lang="de">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>HL2 SOTA CW</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>HL2 SDR SOTA & Digital Cockpit</title>
   <link rel="stylesheet" href="style.css" />
 </head>
-<body>
+<body class="dark-theme">
+  <!-- Top Navigation & Rig Status Bar -->
   <header>
-    <h1>HL2 SOTA CW</h1>
-    <p class="muted">Minimal Web-UI (Frequenz/Mode + CW Jobs)</p>
+    <div class="top-row">
+      <div class="station-id">
+        <span class="logo">HL2 SOTA SDR</span>
+        <span id="stationCall" class="badge call-badge">HB9SOTA</span>
+        <span id="stationRef" class="badge ref-badge">HB/ZH-001</span>
+      </div>
+      <div class="top-actions">
+        <!-- Audio Streamer Control -->
+        <div class="audio-ctrl">
+          <button id="btnAudioToggle" class="btn-icon" title="Audio Stream Tablet Lautsprecher">🔊 RX Audio</button>
+          <input id="audioVolume" type="range" min="0" max="150" value="100" title="Lautstärke" />
+        </div>
+        <button id="btnThemeToggle" class="btn-secondary" title="SOTA Outdoor / Dark Mode">☀️ Kontrast</button>
+      </div>
+    </div>
+
+    <!-- VFO & Telemetry Strip -->
+    <div class="vfo-strip">
+      <div class="vfo-display">
+        <div class="freq-main" id="vfoFrequency">7.030.000 <span class="unit">Hz</span></div>
+        <div class="vfo-meta">
+          <span id="vfoBand" class="badge band-badge">40m</span>
+          <span id="vfoMode" class="badge mode-badge">CWU</span>
+        </div>
+      </div>
+
+      <!-- Live RF & SWR Telemetry -->
+      <div class="telemetry-box">
+        <div class="meter-item">
+          <span class="meter-label">FWD PWR</span>
+          <span id="fwdPowerVal" class="meter-val">0.0 W</span>
+        </div>
+        <div class="meter-item">
+          <span class="meter-label">VSWR</span>
+          <span id="vswrVal" class="meter-val swr-safe">1.0</span>
+        </div>
+      </div>
+
+      <!-- Primary Hardware Controls -->
+      <div class="main-buttons">
+        <button id="btnAtuTune" class="btn-tune">TUNE ATU</button>
+        <button id="btnPtt" class="btn-ptt">PTT (RX)</button>
+      </div>
+    </div>
+
+    <!-- Quick Band & Step Bar -->
+    <div class="quick-bar">
+      <div class="band-selector" id="bandButtons">
+        <button data-freq="1850000" class="btn-band">160m</button>
+        <button data-freq="3573000" class="btn-band">80m</button>
+        <button data-freq="5357000" class="btn-band">60m</button>
+        <button data-freq="7030000" class="btn-band active">40m</button>
+        <button data-freq="10136000" class="btn-band">30m</button>
+        <button data-freq="14074000" class="btn-band">20m</button>
+        <button data-freq="18100000" class="btn-band">17m</button>
+        <button data-freq="21074000" class="btn-band">15m</button>
+        <button data-freq="24915000" class="btn-band">12m</button>
+        <button data-freq="28074000" class="btn-band">10m</button>
+      </div>
+      <div class="step-buttons">
+        <button id="btnStepDown1k" class="btn-step">-1k</button>
+        <button id="btnStepDown100" class="btn-step">-100</button>
+        <button id="btnStepUp100" class="btn-step">+100</button>
+        <button id="btnStepUp1k" class="btn-step">+1k</button>
+      </div>
+    </div>
+
+    <!-- Mode Navigation Tabs -->
+    <nav class="mode-tabs">
+      <button class="tab-btn active" data-tab="tabCw">CW (Morse Text)</button>
+      <button class="tab-btn" data-tab="tabWsjtx">WSJT-X (FT8 / FT4 / WSPR)</button>
+      <button class="tab-btn" data-tab="tabPsk">PSK31 / RTTY</button>
+      <button class="tab-btn" data-tab="tabHardware">N2ADR & Hardware</button>
+      <button class="tab-btn" data-tab="tabLog">SOTA Log (<span id="logCount">0</span>)</button>
+    </nav>
   </header>
 
   <main>
-    <section>
-      <h2>Backend</h2>
-      <label>API Base URL
-        <input id="apiBase" type="text" value="/api" />
-      </label>
-      <button id="btnHealth">Health</button>
-      <pre id="healthOut"></pre>
+    <!-- TAB 1: CW COCKPIT -->
+    <section id="tabCw" class="tab-content active">
+      <div class="cockpit-grid">
+        <!-- Left: Decoded CW RX Terminal -->
+        <div class="panel">
+          <div class="panel-header">
+            <h3>CW Empfang (RX Decoder)</h3>
+            <div class="panel-tools">
+              <button id="btnCwRxClear" class="btn-small">Löschen</button>
+              <button id="btnCwRxToggle" class="btn-small btn-active">Decoder Ein</button>
+            </div>
+          </div>
+          <div id="cwRxWindow" class="terminal-box" tabindex="0">
+            <div class="terminal-placeholder">Warte auf empfangene CW Zeichen...</div>
+          </div>
+        </div>
+
+        <!-- Right: CW Transmission & Macros -->
+        <div class="panel">
+          <div class="panel-header">
+            <h3>CW Senden (Pico Keyer)</h3>
+            <div class="cw-speed-badge">
+              <span id="wpmDisplay">20</span> WPM
+            </div>
+          </div>
+
+          <div class="cw-input-area">
+            <textarea id="cwInputText" rows="3" placeholder="Text zum Senden eingeben (z. B. CQ SOTA DE HB9SOTA K)..."></textarea>
+            <div class="cw-actions">
+              <button id="btnCwSendText" class="btn-primary">Senden (TX)</button>
+              <button id="btnCwAbortText" class="btn-danger">ABORT</button>
+            </div>
+          </div>
+
+          <!-- Touch Macro Keys for SOTA -->
+          <div class="macro-section">
+            <div class="macro-label">SOTA Schnell-Makros:</div>
+            <div class="macro-grid">
+              <button class="btn-macro" data-macro="CQ SOTA">CQ SOTA</button>
+              <button class="btn-macro" data-macro="599 BK">599 BK</button>
+              <button class="btn-macro" data-macro="TU 73 EE">TU 73</button>
+              <button class="btn-macro" data-macro="QRL?">QRL?</button>
+              <button class="btn-macro" data-macro="AGN?">AGN?</button>
+              <button class="btn-macro" data-macro="QRZ?">QRZ?</button>
+            </div>
+          </div>
+
+          <!-- CW Timing Settings & Automated QSO Bot -->
+          <details class="settings-accordion">
+            <summary>Keyer Timing & QSO Bot Einstellungen</summary>
+            <div class="settings-grid">
+              <label>Tempo (WPM)
+                <input id="cwWpmSlider" type="range" min="10" max="40" value="20" />
+              </label>
+              <label>Farnsworth WPM
+                <input id="cwFarnsworth" type="number" min="0" max="40" value="0" />
+              </label>
+              <label>PTT Vorlauf (ms)
+                <input id="cwPttLead" type="number" min="20" max="250" value="80" />
+              </label>
+              <label>PTT Nachlauf (ms)
+                <input id="cwPttTail" type="number" min="50" max="400" value="120" />
+              </label>
+            </div>
+            <div class="bot-box">
+              <h4>Automatisierter QSO Bot</h4>
+              <div class="bot-controls">
+                <button id="btnBotToggle" class="btn-secondary">Bot Start</button>
+                <button id="btnBotCq" class="btn-secondary">Trigger CQ</button>
+                <span id="botStateBadge" class="badge">IDLE</span>
+              </div>
+            </div>
+          </details>
+        </div>
+      </div>
     </section>
 
-    <section>
-      <h2>HL2 Control</h2>
-      <div class="row">
-        <label>Frequenz (Hz)
-          <input id="freqHz" type="number" value="7030000" />
-        </label>
-        <button id="btnSetFreq">Set</button>
-      </div>
+    <!-- TAB 2: WSJT-X (WEAK-SIGNAL) COCKPIT -->
+    <section id="tabWsjtx" class="tab-content">
+      <div class="wsjtx-container">
+        <div class="wsjtx-bar">
+          <div class="wsjtx-status">
+            <span class="status-dot" id="wsjtxConnectedDot"></span>
+            <span id="wsjtxStatusText">WSJT-X: Verbunden</span>
+            <span id="wsjtxSubmode" class="badge">FT8</span>
+          </div>
+          <div class="wsjtx-tools">
+            <button id="btnWsjtxClear" class="btn-small">Liste leeren</button>
+            <button id="btnWsjtxCq" class="btn-primary">CQ Rufen</button>
+            <button id="btnWsjtxHalt" class="btn-danger">HALT TX</button>
+          </div>
+        </div>
 
-      <div class="row">
-        <label>Mode
-          <input id="mode" type="text" value="CWU" />
-        </label>
-        <button id="btnSetMode">Set</button>
+        <!-- Live Decode Table -->
+        <div class="table-wrapper">
+          <table class="decode-table">
+            <thead>
+              <tr>
+                <th>UTC</th>
+                <th>dB</th>
+                <th>DT</th>
+                <th>Freq</th>
+                <th>Nachricht / Signal</th>
+                <th>Aktion</th>
+              </tr>
+            </thead>
+            <tbody id="wsjtxDecodeBody">
+              <tr>
+                <td colspan="6" class="text-center muted">Warte auf WSJT-X Dekodierungen...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </section>
 
-    <section>
-      <h2>CW</h2>
-      <label>Text
-        <input id="cwText" type="text" value="CQ SOTA DE HB9XXX" />
-      </label>
-      <div class="row">
-        <label>WPM
-          <input id="cwWpm" type="number" value="20" />
-        </label>
-        <label>PTT Lead (ms)
-          <input id="cwLead" type="number" value="80" />
-        </label>
-        <label>PTT Tail (ms)
-          <input id="cwTail" type="number" value="120" />
-        </label>
-      </div>
+    <!-- TAB 3: PSK31 & RTTY COCKPIT -->
+    <section id="tabPsk" class="tab-content">
+      <div class="cockpit-grid">
+        <div class="panel">
+          <div class="panel-header">
+            <h3>fldigi Empfang (RX)</h3>
+            <div class="panel-tools">
+              <select id="fldigiModemSelect">
+                <option value="BPSK31">BPSK-31</option>
+                <option value="QPSK31">QPSK-31</option>
+                <option value="RTTY">RTTY (45.45/170)</option>
+                <option value="CW">CW (fldigi DSP)</option>
+              </select>
+              <button id="btnPskClear" class="btn-small">Löschen</button>
+            </div>
+          </div>
+          <div id="pskRxWindow" class="terminal-box">
+            <div class="terminal-placeholder">Warte auf Text von fldigi...</div>
+          </div>
+        </div>
 
-      <div class="row">
-        <button id="btnCwSend">Send</button>
-        <button id="btnCwAbort" class="danger">Abort</button>
-        <button id="btnCwStatus">Status</button>
+        <div class="panel">
+          <div class="panel-header">
+            <h3>fldigi Senden (TX)</h3>
+            <span id="fldigiTxState" class="badge">RX</span>
+          </div>
+          <div class="cw-input-area">
+            <textarea id="pskTxInput" rows="3" placeholder="Text für PSK31 / RTTY Übertragung eingeben..."></textarea>
+            <div class="cw-actions">
+              <button id="btnPskSend" class="btn-primary">Senden (TX)</button>
+              <button id="btnPskAbort" class="btn-danger">ABORT</button>
+            </div>
+          </div>
+          <div class="macro-section">
+            <div class="macro-label">Digitale Makros:</div>
+            <div class="macro-grid">
+              <button class="btn-macro" data-psk="CQ CQ CQ DE HB9SOTA K">CQ PSK</button>
+              <button class="btn-macro" data-psk="UR RST 599 599 BK">599 BK</button>
+              <button class="btn-macro" data-psk="73 ES GL DE HB9SOTA SK">73 GL</button>
+            </div>
+          </div>
+        </div>
       </div>
-
-      <pre id="cwOut"></pre>
     </section>
 
-    <section>
-      <h2>Docs</h2>
-      <ul>
-        <li><a href="https://github.com/philibertschlutzki/Hermes_Lite_SDR_SOTA_CW/blob/main/docs/01_hardware_wiring.md" target="_blank">Hardware Wiring</a></li>
-        <li><a href="https://github.com/philibertschlutzki/Hermes_Lite_SDR_SOTA_CW/blob/main/docs/02_bringup_checklist.md" target="_blank">Bring-up Checklist</a></li>
-      </ul>
+    <!-- TAB 4: HARDWARE & SWR TELEMETRY -->
+    <section id="tabHardware" class="tab-content">
+      <div class="hardware-grid">
+        <div class="panel">
+          <h3>N2ADR Filter Board</h3>
+          <div class="info-list">
+            <div class="info-row"><span>Aktives Band:</span><strong id="hwBandName">40m</strong></div>
+            <div class="info-row"><span>Tiefpassfilter (LPF):</span><strong id="hwLpfBit">Relais 2 (60/40m)</strong></div>
+            <div class="info-row"><span>3 MHz Hochpassfilter (HPF):</span><strong id="hwHpfState">Aktiviert</strong></div>
+            <div class="info-row"><span>C&C Register 0x08 Relais-Byte:</span><strong id="hwRelayWord">0x44</strong></div>
+            <div class="info-row"><span>SWR-Schutzgrenze:</span><strong>&le; 3.0:1 (Auto-Abort)</strong></div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h3>HL2 IO-Board (RP2040 Pico)</h3>
+          <div class="info-list">
+            <div class="info-row"><span>I2C Busadresse:</span><strong>0x1D (HL2 I2C2)</strong></div>
+            <div class="info-row"><span>Antenna Tuner (ATU) Status:</span><strong id="hwAtuStatus">Bereit (0x00)</strong></div>
+            <div class="info-row"><span>Hardware CW Keyer:</span><strong>Aktiviert (Reg 200..273)</strong></div>
+            <div class="info-row"><span>PureSignal / Aux Port:</span><strong>Verfügbar</strong></div>
+          </div>
+          <div class="row" style="margin-top: 15px;">
+            <button id="btnAtuBypass" class="btn-secondary">ATU Bypass</button>
+            <button id="btnIoRefresh" class="btn-primary">Status Aktualisieren</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 5: LOG & SOTA EXPORT -->
+    <section id="tabLog" class="tab-content">
+      <div class="panel">
+        <div class="panel-header">
+          <h3>SOTA QSO Logbuch</h3>
+          <div class="panel-tools">
+            <a href="/log/export/csv" class="btn-primary" download="sota_log.csv">Download CSV (SOTA)</a>
+            <a href="/log/export/adif" class="btn-secondary" download="sota_log.adi">Download ADIF</a>
+          </div>
+        </div>
+        <p class="muted">Alle über den CW Bot oder WSJT-X erfolgreich beendeten QSOs werden automatisch hier gespeichert.</p>
+        <div id="logContent" class="terminal-box" style="height: 350px;">
+          Lade Logdaten...
+        </div>
+      </div>
     </section>
   </main>
 

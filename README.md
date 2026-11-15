@@ -1,82 +1,79 @@
-# Hermes Lite 2 SOTA CW (HL2 + Raspberry Pi + HL2 IO Board)
+# Hermes Lite 2 SDR SOTA & Digital Modes (HL2 + Raspberry Pi 4B + Android Tablet)
 
-Ziel dieses Repos ist ein leichtgewichtiges Setup für SOTA/portable Betrieb mit **Hermes Lite 2** (HL2):
-- Smartphone/Web-UI im WLAN zur Band-/Frequenz-/Mode-Steuerung und CW-Makros.
-- **Automatische CW-Dekodierung** und **Automatisierter QSO-Betrieb** (Bot).
-- CW-Timing lokal auf dem IO-Board (RP2040/Pico), während der Raspberry Pi nur Jobs/Parameter setzt.
+Vollständiges, headless betriebenes SDR-Transceiver-System für den portablen SOTA- und Stationseinsatz mit dem **Hermes-Lite 2 (HL2)**, gesteuert über ein **Android Tablet**.
 
-## Neue Features (QSO Automatisierung & Headless RX)
-Das System kann nun nicht nur senden, sondern auch empfangen und selbstständig QSOs führen:
-*   **CW RX Decoder**: Nutzt `multimon-ng` im Hintergrund, um Audiosignale in Text zu wandeln.
-*   **Headless IQ Streamer**: Integriertes Python-Modul `hl2_stream` empfängt IQ-Daten direkt vom HL2, demoduliert CW und füttert den Decoder – keine externen SDR-Tools (wie Quisk/SDR++) mehr nötig!
-*   **FIR-Filtering**: Integrierte Signalverarbeitung für saubere CW-Töne und besseres SNR.
-*   **QSO Bot**: Eine State-Machine, die CQ ruft, auf Antworten wartet, Rapporte (599) austauscht und das QSO loggt.
+---
 
-## Repository Struktur
+## 1. Systemübersicht & Features
+
+- **Hardware-Basis:**
+  - **Transceiver:** Hermes-Lite 2 (DDC/DUC SDR, 160m–10m, ~5 W QRP).
+  - **N2ADR Filter Board:** Automatische Relaissteuerung (6x LPF, 1x 3MHz HPF) und Live-SWR-/Leistungsmessung via OpenHPSDR C&C.
+  - **HL2 IO-Board (RP2040 Pico):** Hardware-Timing für CW-Tastung, Band-Data-Umschaltung, Lüftersteuerung und Icom AH-4 / Elecraft ATU-Interface.
+  - **Host:** Raspberry Pi 4B (8 GB RAM, Linux ARM64, Headless).
+  - **Client:** Android Tablet (Touch-Bedienung, On-Screen-Texteingabe, Audio-Streaming auf interne Lautsprecher).
+
+- **Unterstützte Betriebsarten (RX & TX):**
+  - **CW (Morse):** 100 % textbasiert über Hardware-Keyer und integrierte Decoder (keine physische Morsetaste/Paddle nötig).
+  - **PSK31 / RTTY:** Volle Unterstützung über integrierten Headless-fldigi-Client.
+  - **WSJT-X Familie:** FT8, FT4, WSPR, JT9, JT65, FST4 und FST4W mit bidirektionalem UDP-Status und One-Touch-QSO-Antwort.
+
+- **Audio-Routing & Streaming:**
+  - Internes, verlustfreies Audio-Routing auf dem Raspberry Pi via **PipeWire** (virtuelle Null-Sinks).
+  - Direkte, verzögerungsarme Audioausgabe (< 80 ms) im Tablet-Browser über **HTML5 Web Audio API / WebSockets**.
+
+---
+
+## 2. Repository-Struktur
 
 ```
 .
-├── docs/                   # Dokumentation
-│   └── 01_hardware_wiring.md
-├── firmware/              # IO-Board Firmware (RP2040)
-│   └── pico_cw_keyer/
+├── docs/                      # Detaillierte Dokumentation
+│   ├── 00_overview.md         # Übersicht
+│   ├── 01_hardware_wiring.md  # Verdrahtungs-Leitfaden
+│   ├── 02_bringup_checklist.md# Inbetriebnahmeprüfung
+│   ├── 03_ioboard_register_protocol.md # I2C- und Registerprotokolle
+│   ├── 04_webui_user_guide.md # Anleitung für das Android Tablet Cockpit
+│   ├── 05_troubleshooting.md  # Fehlerbehebung
+│   └── 06_architecture.md     # Detaillierte Systemarchitektur
+├── firmware/                  # IO-Board Firmware (RP2040)
+│   └── pico_cw_keyer/         # Deterministischer Hardware CW-Keyer
 ├── pi/
-│   ├── backend/           # Python FastAPI Backend
+│   ├── backend/               # Python FastAPI Backend & Subsysteme
 │   │   ├── src/sota_cw/
-│   │   │   ├── api.py           # REST Endpoints
-│   │   │   ├── cw_jobs.py       # TX Job Management
-│   │   │   ├── cw_rx.py         # RX Decoder Integration (Multimon-ng)
-│   │   │   ├── hl2_stream.py    # Headless IQ Receiver & Demodulator
-│   │   │   ├── qso_bot.py       # QSO State Machine
-│   │   │   └── ...
-│   │   ├── requirements.txt
-│   │   └── README.md
-│   └── webui/             # HTML/JS Frontend
-└── third_party/           # Externe Referenzen/Libs
+│   │   │   ├── hardware/      # N2ADR Filter Board, IO-Board, Hamlib rigctld
+│   │   │   ├── modems/        # WSJT-X UDP & fldigi XML-RPC Clients
+│   │   │   ├── audio/         # Audio Streamer für Tablet Playback
+│   │   │   ├── api.py         # REST & WebSocket Endpunkte
+│   │   │   ├── cw_jobs.py     # CW Job Manager & Timing
+│   │   │   ├── cw_rx.py       # CW Empfangsdecoder
+│   │   │   └── qso_bot.py     # Automatisierter SOTA QSO-Bot
+│   │   └── requirements.txt
+│   └── webui/                 # Touch-optimiertes Frontend für Android Tablet
+│       └── static/            # HTML5 / CSS3 (PWA) / Vanilla JS Cockpit
+└── deploy/                    # Automatisierte Installationsskripte
+    ├── install_full_stack.sh  # Master-Installer für Raspberry Pi OS ARM64
+    ├── setup_pipewire_audio.sh# PipeWire Virtual Audio Sinks Setup
+    ├── setup_sota_timesync.sh # Chrony + GPS/RTC Offline Time-Sync
+    ├── nginx-site.conf        # Nginx Reverse Proxy & WebSocket Config
+    └── systemd/               # Systemd Service-Dateien (Backend, WSJT-X, fldigi)
 ```
 
-## Quickstart (Überblick)
+---
 
-1.  **Hardware aufbauen & verdrahten**: siehe `docs/01_hardware_wiring.md`.
-2.  **Software Voraussetzungen**:
-    ```bash
-    sudo apt update
-    sudo apt install multimon-ng alsa-utils
-    # Backend dependencies installieren (inkl. numpy für DSP)
-    cd pi/backend && pip install -r requirements.txt
-    ```
-3.  **Firmware bauen/flashen**: siehe `firmware/pico_cw_keyer/README.md`.
-4.  **Backend starten**: siehe `pi/backend/README.md`.
-    *   Standardmäßig ist nun der interne Streamer aktiviert (`USE_INTERNAL_STREAMER=True`).
-5.  **WebUI öffnen**: siehe `pi/webui/README.md`.
+## 3. Schnelle Inbetriebnahme auf dem Raspberry Pi 4B
 
-## Feature Roadmap
+```bash
+# 1. Repository auf den Raspberry Pi klonen
+git clone https://github.com/philibertschlutzki/Hermes_Lite_SDR_SOTA_CW.git
+cd Hermes_Lite_SDR_SOTA_CW
 
-### Phase 1: Basics (Abgeschlossen)
-- [x] Hardware-Setup & IO-Board Firmware
-- [x] Grundlegendes Web-Interface
-- [x] Manuelles Senden von CW-Texten
+# 2. Vollständige Installation ausführen
+chmod +x deploy/*.sh
+sudo ./deploy/install_full_stack.sh
+```
 
-### Phase 2: RX & Automation (Abgeschlossen)
-- [x] Integration von `multimon-ng` als CW-Decoder
-- [x] Backend API für RX-Text Stream
-- [x] Basis QSO-Bot (CQ -> Antwort -> 599 -> Log)
-- [x] **Headless IQ Streamer**: Native Python Integration für IQ-Empfang.
-- [x] **DSP Filter**: FIR Lowpass Filterung für verbesserten Empfang.
-
-### Phase 3: Verfeinerung (Laufend)
-- [ ] **Web-UI Integration**: GUI-Elemente für Bot-Start/Stop und RX-Text-Anzeige fertigstellen.
-- [ ] **SOTA CSV Export**: Download des Logs direkt über das Web-UI.
-- [ ] **Erweiterte Bot-Logik**: Umgang mit "QRL?", "QRS" und RBN-Spotting.
-
-### Phase 4: TX Quality
-- [x] **Deterministisches CW Timing (Firmware)**: Umstellung auf µs-basierte Delays (reduzierter Drift/Jitter im Element-Timing).
-- [x] **Farnsworth Spacing**: Element-Speed per WPM, aber vergrößerte Character/Word-Gaps über `farnsworth_wpm`.
-- [x] **Keying Weighting**: Konfigurierbare Dit/Dah-Keydown-Skalierung über `weight_pct` (50 = nominal).
-- [x] **Envelope Shaping / Key Click Reduction**: Die Gateware/DSP-Implementierung ist in [philibertschlutzki/Hermes-Lite2_DSP](https://github.com/philibertschlutzki/Hermes-Lite2_DSP) umgesetzt (siehe PR #1 dort). Details zur Schnittstelle stehen in `third_party/README.md`.
-- [ ] **QSK / Semi-BK Optimierung**: PTT/KEY Lead/Tail dynamisch (bandabhängig) und optional RX-TX „fast switch“.
-
-## Lizenz / Third-Party
-Anleitung für Zusammenbau Hermes Lite 2: https://github.com/softerhardware/Hermes-Lite2/wiki
-
-Siehe `third_party/README.md` für die empfohlene Einbindung der HL2-Referenz (inkl. Gateware-Repo-Verweis).
+Anschließend das Android Tablet mit dem WLAN des Raspberry Pi verbinden und im Browser öffnen:
+```text
+http://<raspberry-pi-ip>/
+```

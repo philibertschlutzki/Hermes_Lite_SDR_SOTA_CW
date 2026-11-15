@@ -1,294 +1,101 @@
-# SOTA CW HL2 Backend - Technical Architecture
+# Hermes Lite 2 SOTA & Digital Modes - Technische Systemarchitektur
 
-## Overview
+## 1. Systemübersicht
 
-The SOTA CW HL2 backend provides a REST API for controlling the Hermes Lite 2 SDR for portable SOTA CW operation. It includes automated QSO handling, CW decoding, and TX quality testing infrastructure.
+Dieses System ermöglicht den vollständigen, **headless Remote-Betrieb** des Software Defined Radios **Hermes-Lite 2 (HL2)** über einen **Raspberry Pi 4B (8 GB RAM, Linux ARM64)**, gesteuert durch ein **Android Tablet**.
 
-## Architecture Layers
+### Unterstützte Betriebsarten (RX & TX)
+- **Narrowband / Text-Modi:**
+  - **CW (Morse):** Ausschliesslich textbasiert über Hardware-Keyer (RP2040 Pico) und automatische DSP-Decoder (kein physisches Paddle erforderlich).
+  - **PSK31 / PSK63:** BPSK- und QPSK-Modulation via fldigi Headless-Daemon.
+  - **RTTY:** Baudot 45.45 Baud / 170 Hz Shift via fldigi.
+- **Weak-Signal (WSJT-X Familie):**
+  - **FT8, FT4:** Automatisiertes Schnell-QSO-Handling.
+  - **WSPR:** Bakenbetrieb für Ausbreitungsstudien.
+  - **JT9, JT65:** Ultra-Weak-Signal Modi.
+  - **FST4, FST4W:** Niederfrequenz- und Kurzwellen-Spezialmodi.
 
-### 1. Transport Layer
-- **HL2Client** (`hl2_client.py`): Low-level UDP communication with HL2
-  - Metis protocol implementation
-  - Command & Control (C&C) register access
-  - Extended register addressing for IO board
+---
 
-### 2. Radio Control Layer
-- **HL2Control** (`hl2_control.py`): Radio-level abstractions
-  - Frequency control (TX/RX NCOs)
-  - Mode management (CW/USB/LSB)
-  - CW envelope shaping parameters
-- **IOBoard** (`ioboard.py`): IO board register interface
-  - CW keyer control (via registers)
-  - Status monitoring
-  - No HL2-specific side effects (clean separation)
-
-### 3. Business Logic Layer
-- **CWJobManager** (`cw_jobs.py`): TX job lifecycle
-  - Job submission and sequencing
-  - Parameter validation and defaults
-  - HL2 envelope programming
-- **CWDecoder** (`cw_rx.py`): RX pipeline
-  - multimon-ng integration
-  - Internal streamer (hl2_stream) or external audio
-  - Text buffer management
-- **QSOBot** (`qso_bot.py`): Automated QSO state machine
-  - State transitions (IDLE → CQ → LISTEN → REPORT → LOG)
-  - Callsign extraction
-  - Timeout handling
-
-### 4. API Layer
-- **FastAPI app** (`api.py`): REST endpoints
-  - TX routes (`/cw/send`, `/cw/abort`, `/cw/status`)
-  - RX routes (`/cw/rx/start`, `/cw/rx/stop`, `/cw/rx/text`)
-  - Bot routes (`/bot/configure`, `/bot/start`, `/bot/cq`)
-  - Diagnostics (`/health`, `/healthz`, `/diag`)
-  - Log export (`/log/export/csv`, `/log/export/adif`)
-
-## Configuration Management
-
-### Centralized Settings (`config.py`)
-Uses Pydantic Settings for type-safe configuration:
-
-```python
-from sota_cw.config import settings
-
-# Access configuration
-hl2_ip = settings.hl2_ip
-log_level = settings.log_level
-```
-
-**Environment Variables** (prefix: `SOTA_CW_`):
-- `SOTA_CW_HL2_IP` - HL2 IP address (default: 192.168.1.50)
-- `SOTA_CW_HL2_PORT` - HL2 port (default: 1024)
-- `SOTA_CW_LOG_LEVEL` - Logging level (default: INFO)
-- See `.env.example` for full list
-
-### Configuration Profiles
-Future enhancement: Load different profiles for:
-- SOTA/portable: Minimal CPU, offline mode, fixed bands
-- Lab/bench: Full features, debug logging
-- Contest: Quick macros, efficient logging
-
-## Logging
-
-### Unified Logging (`logging_config.py`)
-Structured logging with consistent format:
+## 2. Architektur-Schichten
 
 ```
-2026-01-04 19:00:00 - sota_cw.api - INFO - Starting SOTA CW HL2 Backend
-2026-01-04 19:00:01 - sota_cw.qso_bot - INFO - QSO Bot started
+┌────────────────────────────────────────────────────────┐
+│            Android Tablet (Client Endgerät)            │
+│  - Touch-Optimiertes Web Cockpit (PWA)                 │
+│  - Integrierte Audio-Wiedergabe via Web Audio API      │
+│  - One-Touch QSO Steuerung (FT8/FT4/CW/PSK/RTTY)       │
+└───────────────────────────▲────────────────────────────┘
+                            │ (WLAN: HTTP, WebSocket, WebRTC)
+┌───────────────────────────▼────────────────────────────┐
+│         Raspberry Pi 4B (Headless Linux ARM64)         │
+│                                                        │
+│  [ FastAPI Gateway & Telemetrie-Pumpe ]                │
+│    ├── Hamlib rigctld CAT Server (TCP 4532)            │
+│    ├── WSJT-X UDP Handler (UDP 2237)                   │
+│    ├── fldigi XML-RPC Client (HTTP 7362)               │
+│    └── Audio Streamer (PCM/Opus -> Tablet)             │
+│                                                        │
+│  [ PipeWire Virtuelle Audio-Matrix ]                   │
+│    ├── SDR_RX_Sink (48 kHz)                            │
+│    └── Digital_TX_Sink (48 kHz)                        │
+│                                                        │
+│  [ HL2 Hardware-Treiber & OpenHPSDR C&C ]              │
+│    ├── N2ADR Filter Relais & SWR Bridge                │
+│    ├── IO-Board I2C (RP2040: Freq, ATU, PTT, PureSig)  │
+│    └── SOTA Pico Keyer (Reg 200..273)                  │
+└───────────────────────────▲────────────────────────────┘
+                            │ (Ethernet / OpenHPSDR Prot. 1)
+┌───────────────────────────▼────────────────────────────┐
+│             Hermes Lite 2 Transceiver HW               │
+│  - DDC/DUC 12-Bit ADC / DAC Mainboard                  │
+│  - N2ADR Filter Board (6x LPF, 1x HPF 3MHz, SWR-Brücke) │
+│  - HL2 IO Board (RP2040 Pico via I2C2 Addr 0x1D)       │
+└────────────────────────────────────────────────────────┘
 ```
 
-**Features**:
-- Configurable log level via `SOTA_CW_LOG_LEVEL`
-- Optional request ID for API calls
-- Module-level logger instances
+---
 
-## Error Handling
+## 3. Hardware-Integration & Registerprotokolle
 
-### Current State
-- Basic HTTP exceptions (HTTPException with status codes)
-- Module-specific error handling (try/except in critical paths)
+### 3.1 N2ADR Filter Board
+- **Relais-Steuerung via OpenHPSDR Register 0x08 (7-Bit):**
+  - `Bit 6`: 3 MHz Hochpassfilter (1 = aktiv bei $\ge 80\,\text{m}$, 0 = Bypass bei $160\,\text{m}$).
+  - `Bits 0–5`: 1-aus-6 Tiefpassfilter-Auswahl (160m, 80m, 60/40m, 30/20m, 17/15m, 12/10m).
+- **SWR- und Leistungsmessung:**
+  - Richtkoppler auf dem Filterboard liefert analoge Spannungen an `AIN1` (Vorwärtsleistung) und `AIN2` (Rückwärtsleistung).
+  - Der HL2-ADC überträgt diese Werte in den zyklischen **EP6-Rückmelderahmen**.
+  - Berechnung:
+    $$\Gamma = \frac{V_{\text{rev}}}{V_{\text{fwd}}}, \quad \text{VSWR} = \frac{V_{\text{fwd}} + V_{\text{rev}}}{V_{\text{fwd}} - V_{\text{rev}}}$$
+  - **Schutz-Interlock:** Bei $\text{VSWR} > 3{,}0$ erfolgt ein automatischer Sendestopp.
 
-### Future Improvements
-Define unified exception hierarchy:
+### 3.2 HL2 IO-Board (RP2040 Pico)
+- **Kommunikation:** Über internen I2C-Bus des HL2 (Adresse `0x1D`), getunnelt über HL2 Extended Registers (`0x3F` + EADDR).
+- **Standard-Register (`0x00–0x09`):**
+  - `0x00–0x04`: 5-Byte Frequenz in Hz (Big Endian). Das Schreiben von Byte 0 triggert die interne Bandcode-Berechnung.
+  - `0x05`: Steuerung (Lüfter / Pegel).
+  - `0x06`: Hardware-Eingänge (EXTTR, In1..In5, PTT in).
+  - `0x07`: Antenna Tuner (ATU) Interface:
+    - Write 1: Start Tune; Write 2: Bypass.
+    - Status: 0x00 (Fertig), 0xEE (Tuner fordert HF-Träger an), $\ge 0\text{xF0}$ (Fehler).
+- **CW Keyer Register (`200–273`):**
+  - Bietet mikrosekundengenaues Dit/Dah-Timing, Farnsworth-Spacing, Weighting und HL2 Envelope Shaping (Rise/Fall Zeit zur Vermeidung von Tastklicks).
 
-```python
-class SOTACWError(Exception):
-    """Base exception for SOTA CW errors"""
-    pass
+---
 
-class HL2CommunicationError(SOTACWError):
-    """HL2 communication failed"""
-    http_code = 503
-    
-class IOBoardError(SOTACWError):
-    """IO board communication failed"""
-    http_code = 503
-    
-class InvalidJobError(SOTACWError):
-    """Invalid CW job parameters"""
-    http_code = 400
-```
+## 4. Audio-Routing & Streaming-Pipeline
 
-## Dependency Injection
+1. **Internes Linux-Routing via PipeWire:**
+   - Zwei persistente Null-Sinks (`SDR_RX_Sink` und `Digital_TX_Sink`) verbinden das SDR-Backend mit den Digital-Modems (WSJT-X, fldigi) vollkommen verlustfrei und ohne physische Soundkarte.
+2. **Audio-Streaming zum Tablet:**
+   - WebSocket-Streaming von 16-Bit 48 kHz PCM-Audio direkt in die HTML5 Web Audio API des Browsers auf dem Android Tablet.
+   - Latenz im lokalen WLAN: $< 80\,\text{ms}$.
 
-### Current Implementation
-Modules create their own dependencies at import time:
+---
 
-```python
-# api.py
-hl2_client = HL2Client(settings.hl2_ip, settings.hl2_port)
-hl2 = HL2Control(..., client=hl2_client)
-io_board = IOBoard(hl2_client, ...)
-cw_manager = CWJobManager(io_board, hl2=hl2)
-```
+## 5. Zeit-Synchronisation im SOTA-Betrieb
 
-**Pros**: Simple, works for single-instance application  
-**Cons**: Hard to test, tight coupling
-
-### Future Improvements
-Use dependency injection for better testability:
-
-```python
-from fastapi import Depends
-
-def get_hl2_client() -> HL2Client:
-    return HL2Client(settings.hl2_ip, settings.hl2_port)
-
-@app.post("/cw/send")
-def send_cw(req: CWSendRequest, hl2: HL2Client = Depends(get_hl2_client)):
-    # Use injected hl2
-    pass
-```
-
-## State Management
-
-### Current State
-- Bot state: In-memory (QSOBot instance)
-- CW job state: IO board registers (persistent across restarts)
-- RX buffer: In-memory deque (lost on restart)
-- QSO log: File-based (sota_log.csv)
-
-### Future Improvements
-- **Persistent bot state**: Save/restore bot config and QSO history
-- **Database integration**: Optional SQLite for logs and state
-- **Redis/cache layer**: For distributed deployments (future)
-
-## Testing Strategy
-
-### Unit Tests (31 tests passing)
-- **QSO Bot** (12 tests): State transitions, callsign extraction
-- **CW Jobs** (11 tests): Job creation, scheduling, IO board writes
-- **HL2 Stream** (8 tests): FIR filter, DSP, synthetic IQ
-
-### Integration Tests (planned)
-- FastAPI endpoints with TestClient
-- Full TX/RX pipeline with mocked hardware
-- Bot end-to-end QSO sequence
-
-### System Tests (manual)
-- Hardware-in-loop with actual HL2
-- Real CW decoding with multimon-ng
-- TX quality measurements (NanoVNA-H4)
-
-## Deployment
-
-### Development
-```bash
-cd pi/backend
-pip install -r requirements.txt -r requirements-dev.txt
-make run
-```
-
-### Production (Headless)
-```bash
-# Create .env file with configuration
-cp .env.example .env
-nano .env
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Run with uvicorn
-uvicorn sota_cw.api:app --host 0.0.0.0 --port 8000
-
-# Or use systemd (see docs/deployment.md for systemd unit file)
-```
-
-### Docker (future)
-```dockerfile
-FROM python:3.10-slim
-WORKDIR /app
-COPY requirements.txt .
-RUN pip install -r requirements.txt
-COPY src/ src/
-CMD ["uvicorn", "sota_cw.api:app", "--host", "0.0.0.0"]
-```
-
-## Performance Considerations
-
-### CPU Usage
-- **DSP (hl2_stream)**: FIR filtering is CPU-intensive
-  - Optimized with NumPy (BLAS/LAPACK)
-  - Acceptable on Raspberry Pi 3B+ or newer
-- **Decoder (multimon-ng)**: External process, moderate CPU
-- **Bot**: Minimal CPU (sleep-based polling)
-
-### Memory Usage
-- IQ buffer: Streaming, no large accumulation
-- RX text buffer: Bounded (deque with maxlen)
-- No memory leaks detected in testing
-
-### Network
-- HL2 UDP: Low bandwidth (~10 KB/s for IQ stream)
-- API: RESTful, stateless (except WebSocket if added)
-
-## Security Considerations
-
-### Current State
-- No authentication on API endpoints
-- Runs on local network (192.168.x.x)
-- No encryption (HTTP, not HTTPS)
-
-### Recommendations for Deployment
-1. **Network isolation**: Keep on private VLAN
-2. **Firewall**: Restrict API access to known clients
-3. **Authentication**: Add API key or OAuth for internet exposure
-4. **HTTPS**: Use reverse proxy (nginx) with TLS
-
-### Hardware Safety
-- Software interlocks (planned):
-  - Prevent TX when config invalid
-  - Detect PTT flapping
-  - Timeout on long TX (overheating protection)
-
-## Extensibility
-
-### Adding New Features
-1. **New API endpoint**: Add route in `api.py`
-2. **New hardware interface**: Create module similar to `ioboard.py`
-3. **New bot behavior**: Extend `qso_bot.py` state machine
-4. **New decoder**: Implement adapter in `cw_rx.py`
-
-### Plugin System (future)
-```python
-# Example plugin interface
-class SOTACWPlugin:
-    def on_startup(self, app): pass
-    def on_qso_complete(self, qso): pass
-    def on_tx_start(self, job): pass
-```
-
-## Documentation
-
-### Current Documentation
-- `docs/` - User guides (hardware, bringup, troubleshooting)
-- `docs/tx_quality_nanovna_h4.md` - TX test plan
-- `docs/test_reports/` - Test data and schemas
-- This file - Technical architecture
-
-### API Documentation
-Auto-generated at `/docs` (FastAPI Swagger UI) and `/redoc` (ReDoc)
-
-Access at: `http://<raspberry_pi_ip>:8000/docs`
-
-## Future Roadmap
-
-### High Priority
-- [ ] WebUI integration (React/Vue frontend)
-- [ ] Enhanced bot logic (QRL?, QRS, partial decodes)
-- [ ] Systemd service files
-- [ ] Deployment documentation
-
-### Medium Priority
-- [ ] Database integration (SQLite)
-- [ ] Config profiles (SOTA/portable/lab)
-- [ ] Software interlocks
-- [ ] Harmonics/TX quality self-test
-
-### Low Priority
-- [ ] WebSocket streaming (real-time RX text)
-- [ ] Docker deployment
-- [ ] Multi-HL2 support
-- [ ] Remote operation (VPN/SSH tunnel)
+WSJT-X (FT8/FT4) erfordert eine Systemzeit-Genauigkeit von besser als $\pm 100\,\text{ms}$.
+Im SOTA-Portabelbetrieb ohne Internet wird dies gewährleistet durch:
+- **USB-GPS Dongle:** Synchronisiert über `gpsd` und `chrony` mit NMEA- und PPS-Referenztakt.
+- **Hardware-RTC (DS3231):** Pufferung der Systemzeit am I2C-Header des Pi 4B.
