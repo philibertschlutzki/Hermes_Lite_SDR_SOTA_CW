@@ -38,3 +38,4 @@ sota_log.csv
 
 # Temporary test data (allow committing reference/example data)
 /tmp/
+firmware/pico_cw_keyer/test/test_keyer

@@ -11,7 +11,7 @@ echo "==> Configuring PipeWire Virtual Audio Nodes on Raspberry Pi 4B..."
 
 # Ensure pipewire and pipewire-pulse packages are present
 sudo apt update
-sudo apt install -y pipewire pipewire-pulse pipewire-audio-client-libraries
+sudo apt install -y pipewire pipewire-pulse pipewire-audio-client-libraries pulseaudio-utils
 
 # Create PipeWire configuration directory for system-wide virtual sinks
 CONFIG_DIR="/etc/pipewire/pipewire.conf.d"
@@ -44,6 +44,11 @@ context.objects = [
     }
 ]
 EOF
+
+# Headless: PipeWire des Benutzers ohne Login starten, damit die systemd-Dienste
+# (Backend, WSJT-X, fldigi) die virtuellen Sinks finden.
+SDR_USER="${SUDO_USER:-pi}"
+sudo loginctl enable-linger "${SDR_USER}" || true
 
 echo "==> Restarting PipeWire user services..."
 systemctl --user restart pipewire pipewire-pulse || true

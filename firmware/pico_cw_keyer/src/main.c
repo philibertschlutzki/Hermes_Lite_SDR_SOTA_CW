@@ -1,156 +1,177 @@
-#include <stdint.h>
+// SOTA-CW-Firmware für das HL2-IO-Board (N2ADR, Raspberry Pi Pico).
+//
+// - I2C-Slave an i2c1 (GPIO14 SDA, GPIO15 SCL), Adresse 0x1D: der HL2 leitet
+//   C&C-Befehle 0x3D (I2C2) des Hosts hierher weiter. Damit braucht der Pi
+//   nur das Netzwerkkabel zum HL2.
+// - Standardregister 0..12 (Frequenz, Eingänge, Lüfter, RF-Eingänge, HPF).
+// - CW-Keyer ab Register 200: Text-FIFO, Morse-Timing im Pico, Ausgabe auf
+//   die Low-Side-Schalter J6 (KEY, PTT), die mit CN4 des HL2 verbunden werden.
+//
+// Pinbelegung nach hl2ioboard.h (jimahlstrom/HL2IOBoard).
 #include <stdbool.h>
-#include <string.h>
+#include <stdint.h>
 
+#include "hardware/gpio.h"
+#include "hardware/i2c.h"
+#include "hardware/pwm.h"
+#include "hardware/watchdog.h"
+#include "pico/i2c_slave.h"
 #include "pico/stdlib.h"
 
 #include "ioboard_regs.h"
-#include "cw_morse.h"
-#include "outputs.h"
+#include "keyer.h"
 
-// -----------------------------------------------------------------------------
-// Register access abstraction
-//
-// This repo ships with a mock register bank so the logic compiles and can be
-// exercised on a Pico directly. For a real HL2 IO-Board integration, replace
-// reg_read/reg_write with the board-specific register interface.
-// -----------------------------------------------------------------------------
+// --- IO-Board-Pins (GPIO-Nummern) ---
+#define GPIO_HPF      0
+#define GPIO_SW12     1
+#define GPIO_RF3      2
+#define GPIO_INTTR    3
+#define GPIO_FAN      4
+#define GPIO_IN5      6
+#define GPIO_IN4      7
+#define GPIO_OUT8     8
+#define GPIO_OUT7     9
+#define GPIO_OUT5     10
+#define GPIO_OUT4     11
+#define GPIO_SW5      12
+#define GPIO_EXTTR    13
+#define GPIO_I2C_SDA  14
+#define GPIO_I2C_SCL  15
+#define GPIO_OUT1     16
+#define GPIO_IN1      17
+#define GPIO_IN2      18
+#define GPIO_OUT2     19
+#define GPIO_OUT3     20
+#define GPIO_IN3      21
+#define GPIO_OUT6     22
+#define GPIO_LED      25
 
-static volatile uint16_t g_regs[512];
+// Keying-Ausgänge: J6 = Low-Side-Schalter (High am GPIO = Ausgang nach GND).
+// Per CMake überschreibbar, z. B. -DKEY_GPIO=22 für Out6.
+#ifndef KEY_GPIO
+#define KEY_GPIO GPIO_OUT7   // J6 Pin 7 -> HL2 CN4 Tip (Key)
+#endif
+#ifndef PTT_GPIO
+#define PTT_GPIO GPIO_OUT8   // J6 Pin 8 -> HL2 CN4 Ring (PTT)
+#endif
 
-static inline uint16_t reg_read(uint16_t addr) {
-  if (addr < (uint16_t)(sizeof(g_regs) / sizeof(g_regs[0]))) return g_regs[addr];
-  return 0;
+#define I2C_BAUD   (400 * 1000)
+#define FAN_WRAP   1020
+#define HPF_MIN_HZ 2550000u  // wie CheckHPF der Standardfirmware (fcode 76)
+
+static keyer_t g_keyer;
+
+static void set_key(bool on) {
+  gpio_put(KEY_GPIO, on);
+  gpio_put(GPIO_LED, on);
 }
 
-static inline void reg_write(uint16_t addr, uint16_t value) {
-  if (addr < (uint16_t)(sizeof(g_regs) / sizeof(g_regs[0]))) g_regs[addr] = value;
+static void set_ptt(bool on) { gpio_put(PTT_GPIO, on); }
+
+static void i2c_handler(i2c_inst_t* i2c, i2c_slave_event_t event) {
+  switch (event) {
+    case I2C_SLAVE_RECEIVE:
+      keyer_i2c_receive(&g_keyer, i2c_read_byte_raw(i2c), time_us_64());
+      break;
+    case I2C_SLAVE_REQUEST:
+      i2c_write_byte_raw(i2c, keyer_i2c_request(&g_keyer));
+      break;
+    case I2C_SLAVE_FINISH:
+      keyer_i2c_finish(&g_keyer);
+      break;
+    default:
+      break;
+  }
 }
 
-// -----------------------------------------------------------------------------
-
-static void set_status(uint16_t st, uint16_t err) {
-  reg_write(REG_CW_STATUS, st);
-  reg_write(REG_ERROR_CODE, err);
+static void out_init(uint pin, bool level) {
+  gpio_init(pin);
+  gpio_put(pin, level);
+  gpio_set_dir(pin, GPIO_OUT);
 }
 
-static char text_get_char(uint16_t idx) {
-  uint16_t reg = REG_TEXT_BUF + (idx / 2);
-  uint16_t word = reg_read(reg);
-  if ((idx % 2) == 0) return (char)((word >> 8) & 0xFF);
-  return (char)(word & 0xFF);
+static void in_init(uint pin) {
+  gpio_init(pin);
+  gpio_set_dir(pin, GPIO_IN);
 }
 
-static inline void sleep_us_exact(uint32_t us) {
-  // Avoid tight busy-wait loops. Use absolute time to reduce drift.
-  sleep_until(delayed_by_us(get_absolute_time(), (int64_t)us));
+static void configure_pins(void) {
+  // Ausgänge zuerst sicher auf Low (Taste los, PTT aus)
+  const uint outs[] = {GPIO_HPF, GPIO_SW12, GPIO_RF3, GPIO_INTTR, GPIO_OUT1, GPIO_OUT2, GPIO_OUT3, GPIO_OUT4,
+                       GPIO_OUT5, GPIO_OUT6, GPIO_OUT7, GPIO_OUT8, GPIO_SW5, GPIO_LED};
+  for (unsigned i = 0; i < sizeof outs / sizeof outs[0]; i++) out_init(outs[i], false);
+
+  const uint ins[] = {GPIO_EXTTR, GPIO_IN1, GPIO_IN2, GPIO_IN3, GPIO_IN4, GPIO_IN5};
+  for (unsigned i = 0; i < sizeof ins / sizeof ins[0]; i++) in_init(ins[i]);
+
+  gpio_set_function(GPIO_FAN, GPIO_FUNC_PWM);
+  uint slice = pwm_gpio_to_slice_num(GPIO_FAN);
+  pwm_set_wrap(slice, FAN_WRAP);
+  pwm_set_gpio_level(GPIO_FAN, 0);
+  pwm_set_enabled(slice, true);
+
+  gpio_set_function(GPIO_I2C_SDA, GPIO_FUNC_I2C);
+  gpio_set_function(GPIO_I2C_SCL, GPIO_FUNC_I2C);
+  i2c_init(i2c1, I2C_BAUD);
+  i2c_slave_init(i2c1, IOBOARD_I2C_ADDR, &i2c_handler);
 }
 
-static void key_down_us(uint32_t us) {
-  outputs_set_key(true);
-  sleep_us_exact(us);
-  outputs_set_key(false);
+static uint8_t read_inputs(void) {
+  uint8_t v = 0;
+  if (gpio_get(GPIO_EXTTR)) v |= 0x01;  // 1 = RX
+  if (gpio_get(GPIO_IN1)) v |= 0x02;
+  if (gpio_get(GPIO_IN2)) v |= 0x04;
+  if (gpio_get(GPIO_IN3)) v |= 0x08;
+  if (gpio_get(GPIO_IN4)) v |= 0x10;
+  if (gpio_get(GPIO_IN5)) v |= 0x20;
+  return v;
 }
 
-static bool check_abort(void) {
-  return reg_read(REG_CW_CMD) == CW_CMD_ABORT;
-}
+static void update_standard_outputs(void) {
+  static uint8_t last_fan = 0xFF;
+  uint8_t fan = g_keyer.regs[REG_FAN_SPEED];
+  if (fan != last_fan) {
+    pwm_set_gpio_level(GPIO_FAN, (uint16_t)fan * 4u);
+    last_fan = fan;
+  }
 
-static void send_char(char c, cw_timing_t t) {
-  const char* pat = cw_morse_pattern(c);
-  if (!pat) return;
+  uint8_t inputs = read_inputs();
+  g_keyer.regs[REG_INPUT_PINS] = inputs;
+  bool rx = inputs & 0x01;
 
-  for (const char* p = pat; *p; ++p) {
-    if (check_abort()) return;
-    if (*p == '.') key_down_us(t.dit_us);
-    else if (*p == '-') key_down_us(t.dah_us);
-    if (check_abort()) return;
-    sleep_us_exact(t.intra_symbol_us);
+  switch (g_keyer.regs[REG_RF_INPUTS]) {
+    case 1:
+      gpio_put(GPIO_INTTR, 1);
+      gpio_put(GPIO_RF3, 1);
+      break;
+    case 2:
+      gpio_put(GPIO_INTTR, 1);
+      gpio_put(GPIO_RF3, rx);  // RX über J9, TX-Rückkopplung über J10
+      break;
+    default:
+      gpio_put(GPIO_INTTR, 0);
+      gpio_put(GPIO_RF3, 0);
+      break;
+  }
+
+  if (g_keyer.freq_changed) {
+    g_keyer.freq_changed = false;
+    gpio_put(GPIO_HPF, keyer_tx_freq_hz(&g_keyer) > HPF_MIN_HZ);
   }
 }
 
 int main(void) {
+  keyer_init(&g_keyer, set_key, set_ptt);
+  configure_pins();
   stdio_init_all();
-  outputs_init();
 
-  // Init register defaults
-  reg_write(REG_CW_CMD, CW_CMD_IDLE);
-  set_status(CW_STATUS_IDLE, 0);
-  reg_write(REG_CW_WPM, 20);
-  reg_write(REG_PTT_LEAD_MS, 80);
-  reg_write(REG_PTT_TAIL_MS, 120);
-  reg_write(REG_TEXT_LEN, 0);
-  reg_write(REG_PROGRESS, 0);
-  reg_write(REG_FARNSWORTH_WPM, 0); // 0 => same as REG_CW_WPM
-  reg_write(REG_WEIGHT_PCT, 50);    // 50 => nominal
-
-  // Envelope shaping defaults (used by HL2-side TX amplitude control)
-  reg_write(REG_CW_RISE_US, 3000);
-  reg_write(REG_CW_FALL_US, 3000);
-  reg_write(REG_CW_ENV_SHAPE, 0);
-  reg_write(REG_CW_ENV_MAX_AMP_Q15, 32767);
+  // Hängt die Hauptschleife, startet der Pico neu; beim Start sind alle Ausgänge aus.
+  watchdog_enable(200, true);
 
   while (true) {
-    uint16_t cmd = reg_read(REG_CW_CMD);
-
-    if (cmd != CW_CMD_START) {
-      sleep_ms(10);
-      continue;
-    }
-
-    // Latch parameters
-    uint16_t wpm = reg_read(REG_CW_WPM);
-    uint16_t farn = reg_read(REG_FARNSWORTH_WPM);
-    uint16_t weight = reg_read(REG_WEIGHT_PCT);
-
-    uint16_t lead = reg_read(REG_PTT_LEAD_MS);
-    uint16_t tail = reg_read(REG_PTT_TAIL_MS);
-    uint16_t len  = reg_read(REG_TEXT_LEN);
-
-    if (len > TEXT_MAX_CHARS) {
-      set_status(CW_STATUS_ERROR, 1);
-      reg_write(REG_CW_CMD, CW_CMD_IDLE);
-      continue;
-    }
-
-    cw_timing_t timing = cw_timing_from_wpm(wpm);
-    cw_apply_farnsworth(&timing, wpm, farn);
-    cw_apply_weight(&timing, weight);
-
-    reg_write(REG_PROGRESS, 0);
-    set_status(CW_STATUS_RUNNING, 0);
-
-    outputs_set_ptt(true);
-    sleep_ms(lead);
-
-    bool aborted = false;
-
-    for (uint16_t i = 0; i < len; i++) {
-      if (check_abort()) { aborted = true; break; }
-
-      char c = text_get_char(i);
-      if (c == 0) break;
-
-      if (cw_is_word_gap(c)) {
-        sleep_us_exact(timing.inter_word_us);
-      } else {
-        send_char(c, timing);
-        sleep_us_exact(timing.inter_char_us);
-      }
-
-      reg_write(REG_PROGRESS, i + 1);
-    }
-
-    sleep_ms(tail);
-    outputs_set_ptt(false);
-    outputs_set_key(false);
-
-    if (aborted) set_status(CW_STATUS_ABORTED, 0);
-    else set_status(CW_STATUS_DONE, 0);
-
-    // Return to idle
-    reg_write(REG_CW_CMD, CW_CMD_IDLE);
-
-    sleep_ms(10);
+    keyer_poll(&g_keyer, time_us_64());
+    update_standard_outputs();
+    watchdog_update();
+    busy_wait_us_32(20);
   }
 }

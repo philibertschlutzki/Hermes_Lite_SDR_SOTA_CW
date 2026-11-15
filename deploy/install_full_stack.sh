@@ -19,7 +19,7 @@ sudo apt update
 sudo apt install -y \
     python3 python3-venv python3-pip \
     wsjtx fldigi hamlib-utils \
-    pipewire pipewire-pulse alsa-utils xvfb \
+    pipewire pipewire-pulse pulseaudio-utils alsa-utils xvfb multimon-ng \
     nginx rsync curl git chrony
 
 echo "==> Step 2: Deploying codebase to ${PREFIX}..."

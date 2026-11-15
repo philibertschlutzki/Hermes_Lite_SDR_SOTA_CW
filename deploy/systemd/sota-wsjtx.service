@@ -6,7 +6,8 @@ Wants=sota-sdr-backend.service
 [Service]
 Type=simple
 User=pi
-Environment="DISPLAY=:99"
+# PipeWire-Sitzung des Benutzers (loginctl enable-linger pi)
+Environment="XDG_RUNTIME_DIR=/run/user/1000"
 ExecStartPre=/usr/bin/mkdir -p /home/pi/.local/share/WSJT-X
 ExecStart=/usr/bin/xvfb-run -a -n 99 /usr/bin/wsjtx
 Restart=on-failure

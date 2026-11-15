@@ -4,9 +4,12 @@ N2ADR Filter Board integration for Hermes-Lite 2.
 Handles:
 1. Low-Pass Filter (LPF) relay selection (160m to 10m).
 2. 3 MHz High-Pass Filter (HPF) broadcast band rejection relay.
-3. OpenHPSDR C&C Register 0x08 relay control word calculation.
-4. SWR and Forward/Reflected Power calculation from HL2 AIN1/AIN2 ADC telemetry.
-5. High-SWR protection / interlock alerting.
+3. Relaiswort für die Open-Collector-Bits in C&C-Adresse 0x00 (DATA[23:17]).
+   Der HL2 schickt dieses Byte selbst per I2C2 an das Filterboard (0x20).
+4. SWR und Vorwärts-/Rückwärtsleistung aus der HL2-Telemetrie (EP6 RADDR 0x01/0x02).
+5. Grenzwert-Prüfung für die SWR-Abschaltung (siehe HL2Control).
+
+Das N2ADR-Board hat keinen 6-m-Tiefpass: Auf 6 m ist nur Empfang erlaubt.
 """
 from __future__ import annotations
 
@@ -20,8 +23,9 @@ class BandInfo:
     name: str
     freq_min_hz: int
     freq_max_hz: int
-    lpf_relay_bit: int  # Bit 0..5 in C&C reg 0x08
-    enable_hpf: bool    # Bit 6 in C&C reg 0x08 (3MHz HPF)
+    lpf_relay_bit: int  # Bit 0..5 des OC-Worts (C&C 0x00, DATA[22:17])
+    enable_hpf: bool    # Bit 6 des OC-Worts (3-MHz-Hochpass)
+    tx_allowed: bool = True
 
 
 # Amateur HF bands supported by HL2 + N2ADR filter board
@@ -36,7 +40,8 @@ HF_BANDS: list[BandInfo] = [
     BandInfo("15m", 21_000_000, 21_450_000, lpf_relay_bit=4, enable_hpf=True),
     BandInfo("12m", 24_890_000, 24_990_000, lpf_relay_bit=5, enable_hpf=True),
     BandInfo("10m", 28_000_000, 29_700_000, lpf_relay_bit=5, enable_hpf=True),
-    BandInfo("6m", 50_000_000, 54_000_000, lpf_relay_bit=5, enable_hpf=True),
+    # Kein 6-m-Filter auf dem N2ADR-Board: nur RX, TX gesperrt
+    BandInfo("6m", 50_000_000, 54_000_000, lpf_relay_bit=5, enable_hpf=True, tx_allowed=False),
 ]
 
 
@@ -54,13 +59,38 @@ class SWRMeasurement:
 class N2ADRFilterBoard:
     """Controller for the N2ADR Low-Pass Filter board on Hermes-Lite 2."""
 
-    def __init__(self, max_vswr_threshold: float = 3.0, power_cal_factor: float = 5.0):
+    def __init__(
+        self,
+        max_vswr_threshold: float = 3.0,
+        power_cal_factor: float = 5.0,
+        *,
+        adc_full_scale: int = 4095,
+        adc_vref: float = 3.3,
+        detector_law: str = "linear",
+        min_fwd_power_w: float = 0.05,
+    ):
+        """
+        power_cal_factor: P = (U_det * power_cal_factor)^2 bei linearem Detektor.
+        detector_law: "linear" (U_det ~ U_HF, P ~ U_det^2) oder "square" (U_det ~ P).
+        Beide Größen müssen am Gerät mit Dummy-Load und Wattmeter kalibriert werden.
+        """
+        if detector_law not in ("linear", "square"):
+            raise ValueError("detector_law must be 'linear' or 'square'")
         self.max_vswr_threshold = max_vswr_threshold
-        # Calibration factor mapping ADC voltage to Watts for HL2 ~5W PA
         self.power_cal_factor = power_cal_factor
+        self.adc_full_scale = adc_full_scale
+        self.adc_vref = adc_vref
+        self.detector_law = detector_law
+        self.min_fwd_power_w = min_fwd_power_w
         self.current_band: Optional[BandInfo] = None
         self.current_relay_word: int = 0
         self.last_measurement: Optional[SWRMeasurement] = None
+
+    def raw_to_power_w(self, raw: int) -> float:
+        v = (max(0, int(raw)) / self.adc_full_scale) * self.adc_vref
+        if self.detector_law == "linear":
+            return (v * self.power_cal_factor) ** 2
+        return v * self.power_cal_factor ** 2
 
     def get_band_for_frequency(self, freq_hz: int) -> BandInfo:
         """Find the corresponding amateur band for a given frequency."""
@@ -80,12 +110,14 @@ class N2ADRFilterBoard:
             return BandInfo("20m (Gen)", freq_hz, freq_hz, lpf_relay_bit=3, enable_hpf=True)
         elif freq_hz < 22_000_000:
             return BandInfo("15m (Gen)", freq_hz, freq_hz, lpf_relay_bit=4, enable_hpf=True)
-        else:
+        elif freq_hz <= 30_000_000:
             return BandInfo("10m (Gen)", freq_hz, freq_hz, lpf_relay_bit=5, enable_hpf=True)
+        else:
+            return BandInfo("VHF (Gen)", freq_hz, freq_hz, lpf_relay_bit=5, enable_hpf=True, tx_allowed=False)
 
     def calculate_relay_word(self, freq_hz: int) -> int:
         """
-        Calculate the 7-bit control word for OpenHPSDR C&C Register 0x08.
+        7-bit-Wort für die Open-Collector-Ausgänge (C&C 0x00, DATA[23:17]).
         
         Bit 6: 3 MHz High-Pass Filter (1 = enabled, 0 = bypassed)
         Bits 0-5: 1-of-6 Low-Pass Filter relay selection
@@ -102,22 +134,17 @@ class N2ADRFilterBoard:
 
     def compute_swr_and_power(self, ain1_raw: int, ain2_raw: int) -> SWRMeasurement:
         """
-        Compute Forward Power, Reflected Power and VSWR from HL2 ADC values.
-        
-        ain1_raw: ADC reading for Forward Power (12-bit, 0..4095)
-        ain2_raw: ADC reading for Reverse Power (12-bit, 0..4095)
+        Vorwärts-/Rückwärtsleistung und SWR aus den HL2-Rohwerten.
+
+        Γ wird immer aus dem Leistungsverhältnis berechnet: |Γ| = sqrt(P_rev / P_fwd).
+        Beim linearen Detektor ist das gleich U_rev/U_fwd, beim quadratischen
+        sqrt(U_rev/U_fwd). So passen Leistungs- und SWR-Formel zusammen (G13).
         """
-        # Convert 12-bit ADC counts to normalized volts (0.0 to 3.3V)
-        v_fwd = (ain1_raw / 4095.0) * 3.3
-        v_rev = (ain2_raw / 4095.0) * 3.3
+        p_fwd = self.raw_to_power_w(ain1_raw)
+        p_rev = self.raw_to_power_w(ain2_raw)
 
-        # Square law detector power approximation: P = (V * cal)^2
-        p_fwd = round((v_fwd * self.power_cal_factor) ** 2, 2)
-        p_rev = round((v_rev * self.power_cal_factor) ** 2, 2)
-
-        # Calculate VSWR
-        if p_fwd > 0.05 and v_fwd > 0.01:
-            gamma = min(0.999, v_rev / v_fwd)
+        if p_fwd >= self.min_fwd_power_w:
+            gamma = math.sqrt(min(1.0, p_rev / p_fwd))
             if gamma < 0.999:
                 vswr = (1.0 + gamma) / (1.0 - gamma)
                 vswr = round(max(1.0, min(99.0, vswr)), 2)
@@ -131,16 +158,14 @@ class N2ADRFilterBoard:
             p_fwd = 0.0
             p_rev = 0.0
 
-        is_safe = vswr <= self.max_vswr_threshold
-
         measurement = SWRMeasurement(
-            fwd_power_w=p_fwd,
-            rev_power_w=p_rev,
+            fwd_power_w=round(p_fwd, 2),
+            rev_power_w=round(p_rev, 2),
             vswr=vswr,
             return_loss_db=return_loss_db,
-            is_safe=is_safe,
-            ain1_raw=ain1_raw,
-            ain2_raw=ain2_raw,
+            is_safe=vswr <= self.max_vswr_threshold,
+            ain1_raw=int(ain1_raw),
+            ain2_raw=int(ain2_raw),
         )
         self.last_measurement = measurement
         return measurement

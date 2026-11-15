@@ -6,6 +6,33 @@
 // Helper selector
 const $ = (id) => document.getElementById(id);
 
+// --- Optionaler API-Token (Backend: SOTA_CW_API_TOKEN) ---
+// Einmal mit http://<pi>/webui/?token=... öffnen; der Token wird gespeichert.
+const API_TOKEN = (() => {
+  try {
+    const fromUrl = new URLSearchParams(window.location.search).get("token");
+    if (fromUrl) localStorage.setItem("sotaApiToken", fromUrl);
+    return fromUrl || localStorage.getItem("sotaApiToken") || "";
+  } catch (e) {
+    return "";
+  }
+})();
+
+if (API_TOKEN) {
+  const nativeFetch = window.fetch.bind(window);
+  window.fetch = (url, opts = {}) => {
+    const headers = new Headers(opts.headers || {});
+    headers.set("X-API-Token", API_TOKEN);
+    return nativeFetch(url, { ...opts, headers });
+  };
+}
+
+function wsUrlFor(path) {
+  const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+  const q = API_TOKEN ? `?token=${encodeURIComponent(API_TOKEN)}` : "";
+  return `${proto}//${window.location.host}${path}${q}`;
+}
+
 // System State
 const state = {
   frequencyHz: 7030000,
@@ -113,11 +140,16 @@ function initPttAndTune() {
   btnPtt.addEventListener("click", async () => {
     const nextPtt = !state.isTransmitting;
     try {
-      await fetch("/hl2/ptt", {
+      const res = await fetch("/hl2/ptt", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ptt: nextPtt }),
       });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert("PTT gesperrt: " + (err.detail || res.status));
+        return;
+      }
       setPttState(nextPtt);
     } catch (e) {
       alert("PTT Fehler: " + e);
@@ -216,11 +248,16 @@ async function sendCwText() {
   };
 
   try {
-    await fetch("/cw/send", {
+    const res = await fetch("/cw/send", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      alert("CW nicht gesendet: " + (typeof err.detail === "string" ? err.detail : res.status));
+      return;
+    }
     $("cwInputText").value = "";
   } catch (e) {
     alert("CW Sendefehler: " + e);
@@ -350,8 +387,7 @@ function startAudio() {
   state.audioContext = new AudioCtx({ sampleRate: 48000 });
   state.audioPlaying = true;
 
-  const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-  const wsUrl = `${proto}//${window.location.host}/ws/audio`;
+  const wsUrl = wsUrlFor("/ws/audio");
   state.audioSocket = new WebSocket(wsUrl);
   state.audioSocket.binaryType = "arraybuffer";
 
@@ -406,8 +442,7 @@ function initThemeToggle() {
 
 // --- Real-Time Telemetry WebSocket ---
 function initTelemetryWebSocket() {
-  const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-  const wsUrl = `${proto}//${window.location.host}/ws/telemetry`;
+  const wsUrl = wsUrlFor("/ws/telemetry");
   const ws = new WebSocket(wsUrl);
 
   ws.onmessage = (event) => {
@@ -434,6 +469,12 @@ function handleTelemetryUpdate(data) {
   const vswrEl = $("vswrVal");
   vswrEl.textContent = state.swr.toFixed(1);
   vswrEl.className = "meter-val " + (state.swr <= 1.5 ? "swr-safe" : state.swr <= 2.5 ? "swr-warn" : "swr-danger");
+
+  if (data.swr_tripped) {
+    vswrEl.className = "meter-val swr-danger";
+    vswrEl.textContent = "TRIP";
+    vswrEl.title = data.swr_trip_reason || "SWR-Schutz ausgelöst";
+  }
 
   // PTT State
   setPttState(data.transmitting);

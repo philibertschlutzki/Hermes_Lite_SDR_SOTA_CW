@@ -25,71 +25,61 @@ Folge: Register sind **8 bit breit und 0–255 adressiert**. 16-bit-Werte müsse
 
 Das HL2-Wiki erwähnt einen Extended-Write über Adresse 0x3F + EADDR, die zugehörige Memory-Map ist aber nicht definiert. Er ist kein dokumentierter Weg zum IO-Board.
 
-## 2. Ist-Stand in diesem Repo
+## 2. Umsetzung in diesem Repo
 
 | Teil | Stand |
 |---|---|
-| `pi/backend/src/sota_cw/hl2_client.py` | Schreibt/liest 16-bit-Werte über 0x3F + EADDR. Passt nicht zu Abschnitt 1. |
-| `pi/backend/src/sota_cw/ioboard.py`, `hardware/hl2_io_board.py` | Nutzen diesen Weg für Standard- und CW-Register. |
-| `firmware/pico_cw_keyer` | Mock-Registerbank im RAM, kein I2C-Slave. Läuft eigenständig auf einem Pico, ist aber nicht vom HL2 aus erreichbar. |
+| `pi/backend/src/sota_cw/hl2_client.py` | `i2c_write()` / `i2c_read()` über C&C 0x3D, mit RQST/ACK, höchstens eine offene Anfrage. |
+| `pi/backend/src/sota_cw/ioboard.py` | 8-bit-Register, Keyer-Map (unten), `read_cw_status()` mit drei 4-Byte-Reads. |
+| `pi/backend/src/sota_cw/hardware/hl2_io_board.py` | Standardregister nach `i2c_registers.h`. |
+| `firmware/pico_cw_keyer` | Eigene IO-Board-Firmware: I2C-Slave (i2c1, GPIO 14 SDA / 15 SCL, 0x1D), Standardregister 0–12, Keyer 200–215. |
 
-Was zu tun ist, steht in [07_known_gaps.md](07_known_gaps.md) (G7–G9, G12).
+Der Pico zählt die Registernummer pro gelesenem oder geschriebenem Byte hoch (wie die N2ADR-Firmware). Ausnahme: Das FIFO-Register 210 zählt beim Schreiben nicht weiter.
 
-## 3. Standard-Register des IO-Boards (Annahme im Code)
+## 3. Standardregister
 
-Diese Belegung nutzt `hardware/hl2_io_board.py`. Sie ist im HL2-Wiki nicht dokumentiert und muss gegen die Firmware des IO-Boards (N2ADR) geprüft werden.
+Nummern wie in `i2c_registers.h` von [HL2IOBoard](https://github.com/jimahlstrom/HL2IOBoard). Die Keyer-Firmware implementiert davon:
 
-| Register | Inhalt laut Code |
-|---|---|
-| 0x00–0x04 | TX-Frequenz in Hz, 5 Byte, MSB zuerst. Das Schreiben des LSB (Register 0x04) löst die Bandberechnung aus. |
-| 0x05 | Control (Lüfter) |
-| 0x06 | Eingänge (EXTTR, In1–In5, PTT) |
-| 0x07 | ATU: Write 1 = Tune, 2 = Bypass; Status 0x00 fertig, 0xEE Träger angefordert, ≥ 0xF0 Fehler |
-| 0x08 | Fault-Code |
-| 0x09 | Firmware-Version |
-
-Wichtig: Wird die Pico-Firmware des IO-Boards durch `pico_cw_keyer` ersetzt, fallen diese Standardfunktionen weg, solange der Keyer sie nicht mit übernimmt.
-
-## 4. CW-Registermap (dieses Repo)
-
-Basis `CW_REG_BASE = 200` (`firmware/pico_cw_keyer/src/ioboard_regs.h`). Werte sind in der Firmware als 16-bit-Register angelegt.
-
-### Steuerung (200–209)
-
-| Reg | Name | Bedeutung |
+| Register | Name | In dieser Firmware |
 |---|---|---|
-| 200 | `REG_CW_CMD` | 0 = IDLE, 1 = START, 2 = ABORT |
-| 201 | `REG_CW_STATUS` | 0 = IDLE, 1 = RUNNING, 2 = DONE, 3 = ABORTED, 4 = ERROR |
-| 202 | `REG_CW_WPM` | Tempo |
-| 203 | `REG_PTT_LEAD_MS` | PTT-Vorlauf (Default 80) |
-| 204 | `REG_PTT_TAIL_MS` | PTT-Nachlauf (Default 120) |
-| 205 | `REG_TEXT_LEN` | Textlänge (max. 120) |
-| 206 | `REG_PROGRESS` | Fortschritt |
-| 207 | `REG_ERROR_CODE` | Fehlercode |
-| 208 | `REG_FARNSWORTH_WPM` | 0 = wie WPM |
-| 209 | `REG_WEIGHT_PCT` | 50 = nominal |
+| 0–4 | `REG_TX_FREQ_BYTE4..0` | TX-Frequenz, Register 0 = höchstes Byte. Write auf 4 übernimmt; HPF (GPIO 0) ein über 2,55 MHz. Der Pi schreibt die Frequenz bei jedem Wechsel. |
+| 5 | `REG_CONTROL` | Write 1 setzt Register 0–199 zurück. |
+| 6 | `REG_INPUT_PINS` | Bit 0 EXTTR (1 = RX), Bit 1–5 In1–In5. Nur lesen. |
+| 7 | `REG_ANTENNA_TUNER` | nur gespeichert, kein ATU-Treiber (G14). |
+| 8 | `REG_FAULT` | gespeichert. |
+| 9 / 10 | `REG_FIRMWARE_MAJOR/MINOR` | 2 / 0 |
+| 11 | `REG_RF_INPUTS` | 0 = normal, 1 = J9, 2 = J9 RX / J10 TX (INTTR GPIO 3, RF3 GPIO 2). |
+| 12 | `REG_FAN_SPEED` | 0–255, PWM auf GPIO 4. |
 
-### Textpuffer (210–269)
+## 4. CW-Keyer-Registermap (200–215)
 
-2 ASCII-Zeichen pro 16-bit-Register (High-Byte zuerst), `TEXT_MAX_CHARS = 120` → 60 Register.
+Definiert in `firmware/pico_cw_keyer/src/ioboard_regs.h`, gespiegelt in `ioboard.py`. Alle Werte 8 bit.
 
-### Envelope-Parameter (270–273)
+| Reg | Name | R/W | Bedeutung |
+|---|---|---|---|
+| 200 | `REG_CW_CMD` | W | 0 idle, 1 START, 2 ABORT (Taste sofort los, FIFO leer), 3 CLEAR (FIFO leer, Fehler löschen) |
+| 201 | `REG_CW_STATUS` | R | 0 idle, 1 läuft, 2 fertig, 3 abgebrochen, 4 Fehler, 5 Tune |
+| 202 | `REG_CW_WPM` | RW | 5–60 |
+| 203 | `REG_PTT_LEAD_MS` | RW | PTT-Vorlauf 0–255 ms (Default 80) |
+| 204 | `REG_PTT_TAIL_MS` | RW | PTT-Nachlauf 0–255 ms (Default 120) |
+| 205 | `REG_FARNSWORTH_WPM` | RW | 0 = wie WPM; sonst werden nur die Abstände gedehnt (ARRL-Verfahren) |
+| 206 | `REG_WEIGHT_PCT` | RW | 50 = nominal, 25–75; Key-down länger, Pause gleich viel kürzer |
+| 207 | `REG_CW_ERROR` | R | 0 ok, 1 FIFO voll, 2 Host-Watchdog, 3 Tune-Zeit überschritten |
+| 208 | `REG_CW_PROGRESS` | R | gesendete Zeichen seit START (mod 256) |
+| 209 | `REG_CW_FIFO_LEVEL` | R | Zeichen im FIFO (max. 255) |
+| 210 | `REG_CW_FIFO_DATA` | W | ASCII-Zeichen anhängen (auch während des Sendens) |
+| 211 | `REG_CW_HEARTBEAT` | W | beliebiger Wert; jeder I2C-Write zählt als Lebenszeichen |
+| 212 | `REG_CW_WATCHDOG_S` | RW | 1–30 s ohne Write → Taste und PTT los, Fehler 2 (Default 3) |
+| 213 | `REG_CW_KEY_DIRECT` | RW | 1 = Dauerträger (Tune), 0 = aus; max. 15 s |
+| 214 | `REG_CW_API_VERSION` | R | 1 |
+| 215 | `REG_CW_MAGIC` | R | 0xC5 (Erkennung der Keyer-Firmware) |
 
-| Reg | Name | Default |
-|---|---|---|
-| 270 | `REG_CW_RISE_US` | 3000 |
-| 271 | `REG_CW_FALL_US` | 3000 |
-| 272 | `REG_CW_ENV_SHAPE` | 0 = linear |
-| 273 | `REG_CW_ENV_MAX_AMP_Q15` | 32767 |
+Ablauf eines Auftrags (`cw_jobs.submit_job`): CMD=3, Parameter, Zeichen nach 210, CMD=1. Während des Sendens schreibt der Pi alle 0,5 s Register 211 und liest den Status.
 
-Der Pico selbst nutzt diese Werte nicht; er schaltet KEY nur hart ein und aus. Die Formung des HF-Signals macht der HL2. Mit Standard-Gateware greift dessen eingebaute CW-Formung; die einstellbaren Werte (C&C 0x18/0x19) gibt es nur im eigenen Gateware-Fork ([third_party/README.md](../third_party/README.md)).
-
-### Konflikt mit Abschnitt 1
-
-Mit 8-bit-Registern bis 255 passt diese Map nicht über I2C: Register 256–273 sind nicht adressierbar, und jeder 16-bit-Wert braucht zwei Register. Für eine echte Umsetzung muss die Map neu geschnitten werden, z. B. 8-bit-Steuerregister ab 200 und der Text als Bytestrom in ein einzelnes FIFO-Register.
+Geschwindigkeit: Jeder Write ist ein C&C-Frame mit RQST und wird vom HL2 bestätigt. Bei 48 kHz sind das etwa 190 Writes/s, ein Text mit 50 Zeichen ist in rund 0,3 s im Pico.
 
 ## Weiterführende Links
 
 - HL2 Repo: https://github.com/softerhardware/Hermes-Lite2
 - HL2 Protocol Wiki: https://github.com/softerhardware/Hermes-Lite2/wiki/Protocol
-- Diskussion zu IO-Board-Registerbereichen: https://groups.google.com/g/hermes-lite/c/zVF4yR1VyjA
+- HL2 IO Board: https://github.com/jimahlstrom/HL2IOBoard

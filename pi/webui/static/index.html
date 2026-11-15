@@ -5,6 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <title>HL2 SDR SOTA & Digital Cockpit</title>
   <link rel="stylesheet" href="style.css" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="icon.svg" type="image/svg+xml" />
+  <meta name="theme-color" content="#111418" />
+  <meta name="mobile-web-app-capable" content="yes" />
 </head>
 <body class="dark-theme">
   <!-- Top Navigation & Rig Status Bar -->
@@ -212,6 +216,7 @@
             <div class="panel-tools">
               <select id="fldigiModemSelect">
                 <option value="BPSK31">BPSK-31</option>
+                <option value="BPSK63">BPSK-63</option>
                 <option value="QPSK31">QPSK-31</option>
                 <option value="RTTY">RTTY (45.45/170)</option>
                 <option value="CW">CW (fldigi DSP)</option>

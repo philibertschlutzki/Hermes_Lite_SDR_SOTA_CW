@@ -20,15 +20,25 @@ class Settings(BaseSettings):
     hl2_ip: str = Field(default="192.168.1.50", description="HL2 IP address")
     hl2_port: int = Field(default=1024, description="HL2 UDP port")
     hl2_local_port: int = Field(
-        default=1025, 
-        description="Local UDP port for HL2 control (1025 avoids conflict with streamer)"
+        default=0,
+        description="Lokaler UDP-Port des einzigen HL2-Sockets (0 = beliebig)"
+    )
+    hl2_drive_level: int = Field(default=15, ge=0, le=15, description="TX-Drive-Level 0..15 (C&C 0x09)")
+    hl2_cw_hang_ms: int = Field(default=250, ge=0, le=1023, description="CW-Hang-Zeit des HL2 (C&C 0x10)")
+    hl2_custom_gateware_envelope: bool = Field(
+        default=False,
+        description="Eigene Gateware mit Envelope-Registern 0x18/0x19 (Standard-Gateware: False)",
     )
     
     # Hardware Integration (N2ADR & IO Board)
     n2adr_enabled: bool = Field(default=True, description="Enable N2ADR Filter Board control")
     max_vswr_threshold: float = Field(default=3.0, description="Max safe VSWR before TX interlock trip")
+    swr_trip_count: int = Field(default=3, ge=1, description="Messungen über Grenzwert in Folge bis zur Abschaltung")
+    power_cal_factor: float = Field(default=5.0, description="Kalibrierfaktor Leistung (am Gerät bestimmen)")
+    power_detector_law: str = Field(default="linear", description="linear oder square")
     io_board_enabled: bool = Field(default=True, description="Enable HL2 IO Board (RP2040 Pico) support")
-    io_reg_base: int = Field(default=200, description="IO board register base address for CW keyer")
+    io_reg_base: int = Field(default=200, ge=0, le=240, description="Erstes CW-Keyer-Register im Pico (8 bit)")
+    cw_watchdog_s: int = Field(default=3, ge=1, le=30, description="Pico lässt die Taste los, wenn so lange kein Heartbeat kommt")
     
     # Hamlib CAT Server Configuration
     cat_server_enabled: bool = Field(default=True, description="Enable built-in Hamlib rigctld CAT server")
@@ -58,12 +68,26 @@ class Settings(BaseSettings):
     )
     
     cw_decoder_cmd_legacy: str = Field(
-        default="arecord -r 22050 -f S16_LE -t raw -c 1 -D default | multimon-ng -a MORSE_CW -t raw -",
+        default="parec --device=SDR_RX_Sink.monitor --rate=22050 --channels=1 --format=s16le | multimon-ng -a MORSE_CW -t raw -",
         description="Fallback command if internal streamer is disabled (legacy mode)"
     )
     
     # Audio Streaming Configuration
     audio_sample_rate: int = Field(default=48000, description="Audio sample rate for streaming")
+    cw_pitch_hz: int = Field(default=600, ge=300, le=1000, description="CW-Mithörton")
+    pipewire_enabled: bool = Field(default=True, description="RX/TX-Audio über PipeWire (pacat/parec)")
+    rx_audio_sink_cmd: str = Field(
+        default="pacat --playback --device=SDR_RX_Sink --rate=48000 --channels=1 --format=s16le --latency-msec=60",
+        description="Prozess, der RX-Audio (s16le, 48 kHz, mono) von stdin nach SDR_RX_Sink spielt",
+    )
+    tx_audio_source_cmd: str = Field(
+        default="parec --device=Digital_TX_Sink.monitor --rate=48000 --channels=1 --format=s16le --latency-msec=20",
+        description="Prozess, der TX-Audio der Modems (s16le, 48 kHz, mono) auf stdout liefert",
+    )
+    tx_audio_gain: float = Field(default=1.0, ge=0.0, le=4.0, description="Verstärkung TX-Audio vor dem Modulator")
+
+    # Zugriffsschutz
+    api_token: str = Field(default="", description="Wenn gesetzt: Token für alle API-Aufrufe (Header X-API-Token oder ?token=)")
     
     # Logging
     log_level: str = Field(default="INFO", description="Logging level")

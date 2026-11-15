@@ -111,3 +111,43 @@ class TestSyntheticIQ:
         
         # Power should be reduced due to bandwidth limitation
         assert output_power < input_power
+
+
+class TestDemodAndModulator:
+    def test_usb_demod_passes_upper_sideband(self):
+        from sota_cw.dsp import Demodulator
+        fs = 48000
+        t = np.arange(4800) / fs
+        usb = np.exp(2j * np.pi * 1000 * t).astype(np.complex64) * 0.1
+        lsb = np.exp(-2j * np.pi * 1000 * t).astype(np.complex64) * 0.1
+        d = Demodulator("USB", agc=False)
+        p_usb = np.mean(d.process(usb)[1000:] ** 2)
+        d = Demodulator("USB", agc=False)
+        p_lsb = np.mean(d.process(lsb)[1000:] ** 2)
+        assert 10 * np.log10(p_usb / p_lsb) > 30
+
+    def test_cw_demod_tone_at_pitch(self):
+        from sota_cw.dsp import Demodulator
+        iq = np.full(9600, 0.1 + 0j, dtype=np.complex64)  # Träger auf der Dial-Frequenz
+        audio = Demodulator("CWU", cw_pitch_hz=600, agc=False).process(iq)[2000:]
+        spec = np.abs(np.fft.rfft(audio))
+        f = np.fft.rfftfreq(len(audio), 1 / 48000)
+        assert abs(f[np.argmax(spec)] - 600) < 10
+
+    def test_ssb_modulator_single_sideband(self):
+        from sota_cw.dsp import SSBModulator
+        t = np.arange(9600) / 48000
+        audio = 0.5 * np.sin(2 * np.pi * 1500 * t)
+        iq = SSBModulator(sideband="USB").process(audio)[1000:]
+        spec = np.abs(np.fft.fft(iq))
+        f = np.fft.fftfreq(len(iq), 1 / 48000)
+        pos = spec[np.argmin(np.abs(f - 1500))]
+        neg = spec[np.argmin(np.abs(f + 1500))]
+        assert 20 * np.log10(pos / neg) > 30
+        assert np.max(np.abs(iq)) <= 1.0
+
+    def test_resampler_rate(self):
+        from sota_cw.dsp import Resampler
+        r = Resampler(48000, 22050)
+        total = sum(len(r.process(np.zeros(1260))) for _ in range(100))
+        assert abs(total - 126000 * 22050 / 48000) < 3

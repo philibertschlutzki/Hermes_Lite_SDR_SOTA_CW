@@ -5,12 +5,13 @@ import os
 import time
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .config import settings
-from .cw_jobs import CWJobManager
+from .cw_jobs import CWJobManager, TxNotAllowed
 from .cw_rx import CWDecoder
 from .hl2_client import HL2Client
 from .hl2_control import HL2Control
@@ -20,6 +21,7 @@ from .hardware.cat_server import HamlibCatServer
 from .modems.wsjtx_client import WSJTXClient, WSJTXDecode
 from .modems.fldigi_client import FldigiClient
 from .audio.audio_streamer import AudioStreamer
+from .audio.radio_audio import RxAudioPipeline, TxAudioPipeline
 from .logging_config import setup_logging, get_logger
 from .qso_bot import QSOBot, BotConfig
 
@@ -34,20 +36,56 @@ app = FastAPI(
 )
 
 # -----------------------------------------------------------------------------
+# Optionaler Zugriffsschutz (B4): Token im Header X-API-Token oder ?token=
+# -----------------------------------------------------------------------------
+_OPEN_PATHS = ("/health", "/healthz")
+
+
+def _token_ok(token: str | None) -> bool:
+    return not settings.api_token or token == settings.api_token
+
+
+@app.middleware("http")
+async def api_token_middleware(request: Request, call_next):
+    path = request.url.path
+    if settings.api_token and path not in _OPEN_PATHS and not path.startswith("/webui"):
+        token = request.headers.get("x-api-token") or request.query_params.get("token")
+        if not _token_ok(token):
+            return JSONResponse(status_code=401, content={"detail": "API-Token fehlt oder falsch"})
+    return await call_next(request)
+
+
+async def _ws_accept(websocket: WebSocket) -> bool:
+    if not _token_ok(websocket.query_params.get("token")):
+        await websocket.close(code=4401)
+        return False
+    await websocket.accept()
+    return True
+
+
+# -----------------------------------------------------------------------------
 # System Initialization
 # -----------------------------------------------------------------------------
+# Ein einziger Protocol-1-Socket für Steuerung, IQ und TX (G6)
 hl2_client = HL2Client(settings.hl2_ip, settings.hl2_port, local_port=settings.hl2_local_port)
 
-n2adr_board = N2ADRFilterBoard(max_vswr_threshold=settings.max_vswr_threshold)
+n2adr_board = N2ADRFilterBoard(
+    max_vswr_threshold=settings.max_vswr_threshold,
+    power_cal_factor=settings.power_cal_factor,
+    detector_law=settings.power_detector_law,
+)
 io_board = HL2IOBoard(hl2_client, cw_reg_base=settings.io_reg_base)
 
 hl2 = HL2Control(
     settings.hl2_ip,
     settings.hl2_port,
     client=hl2_client,
-    local_port=settings.hl2_local_port,
     n2adr=n2adr_board,
-    io_board=io_board,
+    io_board=io_board if settings.io_board_enabled else None,
+    custom_gateware_envelope=settings.hl2_custom_gateware_envelope,
+    trip_count=settings.swr_trip_count,
+    drive_level=settings.hl2_drive_level,
+    cw_hang_ms=settings.hl2_cw_hang_ms,
 )
 
 cw_manager = CWJobManager(
@@ -57,7 +95,20 @@ cw_manager = CWJobManager(
     default_env_fall_us=settings.cw_env_fall_us,
     default_env_shape=settings.cw_env_shape,
     default_env_max_amp_q15=settings.cw_env_max_amp_q15,
+    watchdog_s=settings.cw_watchdog_s,
 )
+
+
+def _on_swr_trip(reason: str) -> None:
+    # Der Pico tastet über CN4; nur er kann eine laufende CW-Aussendung beenden
+    try:
+        cw_manager.abort_job()
+        cw_manager.tune(False)
+    except Exception as e:
+        logger.error(f"CW-Abbruch nach SWR-Trip fehlgeschlagen: {e}")
+
+
+hl2.add_trip_callback(_on_swr_trip)
 
 cw_decoder = CWDecoder()
 
@@ -72,6 +123,29 @@ qso_bot = QSOBot(cw_manager, cw_decoder, default_bot_config)
 wsjtx_client = WSJTXClient(host=settings.wsjtx_host, port=settings.wsjtx_port)
 fldigi_client = FldigiClient(host=settings.fldigi_host, port=settings.fldigi_port)
 audio_streamer = AudioStreamer(sample_rate=settings.audio_sample_rate)
+
+rx_audio = RxAudioPipeline(
+    mode=hl2.mode,
+    cw_pitch_hz=settings.cw_pitch_hz,
+    sink_cmd=settings.rx_audio_sink_cmd if settings.pipewire_enabled else None,
+)
+tx_audio = TxAudioPipeline(
+    source_cmd=settings.tx_audio_source_cmd if settings.pipewire_enabled else None,
+    gain=settings.tx_audio_gain,
+)
+rx_audio.add_consumer(audio_streamer.feed_audio)
+rx_audio.add_consumer(lambda a: cw_decoder.feed_audio(a) if hl2.mode in ("CWU", "CWL") else None)
+hl2_client.add_iq_callback(rx_audio.on_iq)
+hl2_client.set_tx_source(tx_audio.tx_source)
+
+
+def _on_mode(mode: str) -> None:
+    rx_audio.set_mode(mode)
+    tx_audio.set_mode(mode)
+
+
+hl2.add_mode_callback(_on_mode)
+_on_mode(hl2.mode)
 cat_server = HamlibCatServer(hl2=hl2, host=settings.cat_server_host, port=settings.cat_server_port)
 
 
@@ -91,16 +165,25 @@ class PttRequest(BaseModel):
 
 
 class CWSendRequest(BaseModel):
-    text: str
-    wpm: int = 20
-    ptt_lead_ms: int = 80
-    ptt_tail_ms: int = 120
+    text: str = Field(..., min_length=1, max_length=255)
+    wpm: int = Field(default=20, ge=5, le=60)
+    ptt_lead_ms: int = Field(default=80, ge=0, le=255)
+    ptt_tail_ms: int = Field(default=120, ge=0, le=255)
     farnsworth_wpm: int = Field(default=0, ge=0, le=60)
-    weight_pct: int = Field(default=50, ge=0, le=100)
+    weight_pct: int = Field(default=50, ge=25, le=75)
     env_rise_us: int = Field(default=3000, ge=0, le=20000)
     env_fall_us: int = Field(default=3000, ge=0, le=20000)
     env_shape: int = Field(default=0, ge=0, le=10)
     env_max_amp_q15: int = Field(default=32767, ge=0, le=32767)
+
+
+class CWAppendRequest(BaseModel):
+    text: str = Field(..., min_length=1, max_length=255)
+
+
+class TuneRequest(BaseModel):
+    enable: bool
+    max_s: float = Field(default=10.0, gt=0, le=15)
 
 
 class BotConfigRequest(BaseModel):
@@ -172,6 +255,7 @@ def diagnostics():
             "mode": hl2.mode,
             "band": band_info.name,
             "transmitting": hl2.is_transmitting,
+            **hl2.status(),
         },
         "n2adr": {
             "band": band_info.name,
@@ -242,7 +326,10 @@ def get_frequency():
 
 @app.post("/hl2/mode")
 def set_mode(req: ModeRequest):
-    hl2.set_mode(req.mode)
+    try:
+        hl2.set_mode(req.mode)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     return {"status": "ok", "mode": hl2.mode}
 
 
@@ -253,18 +340,34 @@ def get_mode():
 
 @app.post("/hl2/ptt")
 def set_ptt(req: PttRequest):
-    hl2.set_ptt(req.ptt)
+    try:
+        hl2.set_ptt(req.ptt)
+    except PermissionError as e:
+        raise HTTPException(status_code=409, detail=str(e))
     return {"status": "ok", "transmitting": hl2.is_transmitting}
+
+
+@app.get("/hl2/swr")
+def get_swr():
+    meas = n2adr_board.last_measurement
+    return {
+        "tripped": hl2.swr_tripped,
+        "reason": hl2.swr_trip_reason,
+        "threshold": n2adr_board.max_vswr_threshold,
+        "measurement": meas.__dict__ if meas else None,
+        "raw": {"fwd": hl2.telemetry.fwd_power_raw, "rev": hl2.telemetry.rev_power_raw},
+    }
+
+
+@app.post("/hl2/swr/reset")
+def reset_swr():
+    hl2.reset_swr_trip()
+    return {"status": "ok", "tripped": hl2.swr_tripped}
 
 
 @app.get("/hl2/status")
 def get_hl2_status():
-    return {
-        "frequency_hz": hl2.frequency_hz,
-        "mode": hl2.mode,
-        "band": hl2.get_band_info().name,
-        "transmitting": hl2.is_transmitting,
-    }
+    return hl2.status()
 
 
 # -----------------------------------------------------------------------------
@@ -290,13 +393,19 @@ def get_ioboard_status():
 
 @app.post("/hardware/ioboard/atu/tune")
 def trigger_atu_tune():
-    io_board.start_atu_tune()
+    try:
+        io_board.start_atu_tune()
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"IO-Board nicht erreichbar: {e}")
     return {"status": "tune_started"}
 
 
 @app.post("/hardware/ioboard/atu/bypass")
 def trigger_atu_bypass():
-    io_board.bypass_atu()
+    try:
+        io_board.bypass_atu()
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"IO-Board nicht erreichbar: {e}")
     return {"status": "bypassed"}
 
 
@@ -305,7 +414,17 @@ def trigger_atu_bypass():
 # -----------------------------------------------------------------------------
 @app.post("/cw/send")
 def send_cw(req: CWSendRequest):
-    job_id = cw_manager.start_job(
+    try:
+        job_id = _start_cw(req)
+    except TxNotAllowed as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except (ConnectionError, TimeoutError, RuntimeError) as e:
+        raise HTTPException(status_code=503, detail=f"Keyer nicht erreichbar: {e}")
+    return {"job_id": job_id, "status": "started"}
+
+
+def _start_cw(req: CWSendRequest) -> int:
+    return cw_manager.start_job(
         req.text,
         req.wpm,
         ptt_lead_ms=req.ptt_lead_ms,
@@ -317,13 +436,38 @@ def send_cw(req: CWSendRequest):
         env_shape=req.env_shape,
         env_max_amp_q15=req.env_max_amp_q15,
     )
-    return {"job_id": job_id, "status": "started"}
+
+
+@app.post("/cw/append")
+def append_cw(req: CWAppendRequest):
+    try:
+        n = cw_manager.append(req.text)
+    except TxNotAllowed as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except (ConnectionError, TimeoutError, RuntimeError) as e:
+        raise HTTPException(status_code=503, detail=f"Keyer nicht erreichbar: {e}")
+    return {"status": "appended", "chars": n}
 
 
 @app.post("/cw/abort")
 def abort_cw():
-    cw_manager.abort_job()
+    try:
+        cw_manager.abort_job()
+    except (ConnectionError, TimeoutError, RuntimeError) as e:
+        raise HTTPException(status_code=503, detail=f"Keyer nicht erreichbar: {e}")
     return {"status": "aborted"}
+
+
+@app.post("/cw/tune")
+def tune_cw(req: TuneRequest):
+    """Dauerträger über den Pico-Keyer (z. B. für einen externen Tuner)."""
+    try:
+        cw_manager.tune(req.enable, max_s=req.max_s)
+    except TxNotAllowed as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except (ConnectionError, TimeoutError, RuntimeError) as e:
+        raise HTTPException(status_code=503, detail=f"Keyer nicht erreichbar: {e}")
+    return {"status": "tune_on" if req.enable else "tune_off"}
 
 
 @app.get("/cw/status")
@@ -568,7 +712,8 @@ def get_log_count():
 @app.websocket("/ws/telemetry")
 async def websocket_telemetry(websocket: WebSocket):
     """Pushes real-time radio state, SWR, decodes, and modem activity to tablet."""
-    await websocket.accept()
+    if not await _ws_accept(websocket):
+        return
     try:
         while True:
             band_info = hl2.get_band_info()
@@ -579,13 +724,15 @@ async def websocket_telemetry(websocket: WebSocket):
                 "frequency_hz": hl2.frequency_hz,
                 "mode": hl2.mode,
                 "band": band_info.name,
-                "transmitting": hl2.is_transmitting,
+                "transmitting": hl2.is_transmitting or hl2.telemetry.ptt_in,
+                "swr_tripped": hl2.swr_tripped,
+                "swr_trip_reason": hl2.swr_trip_reason,
                 "swr": swr_meas.vswr if swr_meas else 1.0,
                 "fwd_power_w": swr_meas.fwd_power_w if swr_meas else 0.0,
                 "cw": {
                     "running": cw_decoder.running,
                     "recent_text": cw_decoder.get_text()[-5:],
-                    "status": cw_manager.get_status(),
+                    "status": await asyncio.to_thread(cw_manager.get_status),
                 },
                 "wsjtx": wsjtx_client.get_status_dict(),
                 "fldigi": {
@@ -606,7 +753,8 @@ async def websocket_telemetry(websocket: WebSocket):
 @app.websocket("/ws/audio")
 async def websocket_audio(websocket: WebSocket):
     """Streams live demodulated PCM audio to the tablet browser."""
-    await websocket.accept()
+    if not await _ws_accept(websocket):
+        return
     q: asyncio.Queue = asyncio.Queue(maxsize=30)
     audio_streamer.register_subscriber(q)
     try:
@@ -636,18 +784,23 @@ if os.path.exists(webui_dir):
 async def startup_event():
     logger.info("Starting Hermes Lite 2 SOTA & Digital Modes Backend...")
     try:
-        hl2.start(disable_watchdog=True)
+        # HL2-Watchdog bleibt aktiv: fällt der Pi aus, stoppt der HL2 den Stream
+        hl2.start(disable_watchdog=False)
     except Exception as e:
         logger.warning(f"HL2 start warning: {e}")
 
-    try:
-        hl2.set_cw_envelope(
-            rise_us=settings.cw_env_rise_us,
-            fall_us=settings.cw_env_fall_us,
-            max_amp_q15=settings.cw_env_max_amp_q15,
-        )
-    except Exception as e:
-        logger.warning(f"Envelope setup warning: {e}")
+    rx_audio.start()
+    tx_audio.start()
+
+    if settings.io_board_enabled:
+        try:
+            present, api = await asyncio.to_thread(io_board.probe_keyer)
+            if present:
+                logger.info(f"Pico-CW-Keyer gefunden (API {api})")
+            else:
+                logger.warning("IO-Board antwortet, aber ohne CW-Keyer-Firmware (Magic fehlt)")
+        except Exception as e:
+            logger.warning(f"IO-Board/Pico nicht erreichbar: {e}")
 
     if settings.cat_server_enabled:
         try:
@@ -675,8 +828,10 @@ async def shutdown_event():
     fldigi_client.stop()
     cw_decoder.stop()
     qso_bot.stop()
+    rx_audio.stop()
+    tx_audio.stop()
     try:
-        hl2.stop(disable_watchdog=True)
+        hl2.stop()
     except Exception:
         pass
     logger.info("Hermes Lite 2 Backend shut down cleanly.")

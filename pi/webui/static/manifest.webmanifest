@@ -1,0 +1,15 @@
+{
+  "name": "HL2 SOTA SDR Cockpit",
+  "short_name": "HL2 SOTA",
+  "description": "Hermes-Lite 2 Fernbedienung für CW, FT8 und Digitalmodes",
+  "lang": "de",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "landscape",
+  "background_color": "#111418",
+  "theme_color": "#111418",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

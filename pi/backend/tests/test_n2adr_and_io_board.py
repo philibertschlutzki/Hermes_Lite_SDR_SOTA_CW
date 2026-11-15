@@ -58,33 +58,60 @@ class TestN2ADRFilterBoard:
         assert meas_high.is_safe is False
 
 
+class TestBandLockout:
+    def test_6m_rx_only(self):
+        board = N2ADRFilterBoard()
+        assert board.get_band_for_frequency(50_100_000).tx_allowed is False
+        assert board.get_band_for_frequency(14_060_000).tx_allowed is True
+
+    def test_square_law_detector(self):
+        board = N2ADRFilterBoard(detector_law="square")
+        # Quadratischer Detektor: U_rev/U_fwd = 0.25 -> Γ = 0.5 -> SWR 3
+        meas = board.compute_swr_and_power(ain1_raw=2000, ain2_raw=500)
+        assert meas.vswr == pytest.approx(3.0, rel=0.05)
+
+
 class TestHL2IOBoard:
     def test_frequency_encoding(self):
         mock_client = Mock()
         io = HL2IOBoard(mock_client)
 
-        freq = 14_074_000  # 0x00D6C110
+        freq = 14_074_000  # 0x00D6C090
         io.set_tx_frequency(freq)
 
-        # Check register writes
-        # 5 bytes written, ending with trigger write to reg 4
-        calls = mock_client.ext_write_u16.call_args_list
+        calls = mock_client.i2c_write.call_args_list
         assert len(calls) == 5
-        # Reg 0..3: high bytes
-        # Reg 4: LSB trigger
-        assert calls[4].kwargs["eaddr"] == 4
-        assert calls[4].kwargs["value"] == (freq & 0xFF)
+        regs = [c.kwargs["reg"] for c in calls]
+        data = [c.kwargs["data"] for c in calls]
+        assert regs == [0, 1, 2, 3, 4]          # Register 4 (LSB) zuletzt = Übernahme
+        assert data == [0x00, 0x00, 0xD6, 0xC0, 0x90]
+        assert all(c.kwargs["i2c_addr"] == 0x1D for c in calls)
+        assert all(c.kwargs["bus"] == 2 for c in calls)
 
     def test_atu_state_machine(self):
         mock_client = Mock()
         io = HL2IOBoard(mock_client)
 
-        # Trigger Tune
         io.start_atu_tune()
-        mock_client.ext_write_u16.assert_called_with(eaddr=7, value=1)
+        mock_client.i2c_write.assert_called_with(i2c_addr=0x1D, reg=7, data=1, bus=2)
         assert io.atu_in_progress is True
 
-        # Trigger Bypass
         io.bypass_atu()
-        mock_client.ext_write_u16.assert_called_with(eaddr=7, value=2)
+        mock_client.i2c_write.assert_called_with(i2c_addr=0x1D, reg=7, data=2, bus=2)
         assert io.atu_in_progress is False
+
+    def test_registers_are_8bit(self):
+        io = HL2IOBoard(Mock())
+        with pytest.raises(ValueError):
+            io.write_reg(256, 0)
+        with pytest.raises(ValueError):
+            io.write_reg(200, 300)
+
+    def test_status_from_4byte_reads(self):
+        client = Mock()
+        reads = {5: bytes([0, 0x01, 0, 0]), 9: bytes([2, 7, 0, 0]), 212: bytes([3, 0, 1, 0xC5])}
+        client.i2c_read.side_effect = lambda **kw: reads[kw["reg"]]
+        st = HL2IOBoard(client).get_status()
+        assert st.reachable and st.keyer_present
+        assert st.firmware_version == 2 and st.firmware_minor == 7
+        assert st.exttr_tx is False
