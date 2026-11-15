@@ -24,8 +24,25 @@ class Settings(BaseSettings):
         description="Local UDP port for HL2 control (1025 avoids conflict with streamer)"
     )
     
-    # IO Board Configuration
-    io_reg_base: int = Field(default=200, description="IO board register base address")
+    # Hardware Integration (N2ADR & IO Board)
+    n2adr_enabled: bool = Field(default=True, description="Enable N2ADR Filter Board control")
+    max_vswr_threshold: float = Field(default=3.0, description="Max safe VSWR before TX interlock trip")
+    io_board_enabled: bool = Field(default=True, description="Enable HL2 IO Board (RP2040 Pico) support")
+    io_reg_base: int = Field(default=200, description="IO board register base address for CW keyer")
+    
+    # Hamlib CAT Server Configuration
+    cat_server_enabled: bool = Field(default=True, description="Enable built-in Hamlib rigctld CAT server")
+    cat_server_host: str = Field(default="127.0.0.1", description="CAT server bind host")
+    cat_server_port: int = Field(default=4532, description="CAT server TCP port (default rigctld 4532)")
+
+    # Digital Modes Configuration
+    wsjtx_enabled: bool = Field(default=True, description="Enable WSJT-X UDP client")
+    wsjtx_host: str = Field(default="127.0.0.1", description="WSJT-X UDP host")
+    wsjtx_port: int = Field(default=2237, description="WSJT-X UDP port")
+
+    fldigi_enabled: bool = Field(default=True, description="Enable fldigi XML-RPC client (PSK31/RTTY)")
+    fldigi_host: str = Field(default="127.0.0.1", description="fldigi XML-RPC host")
+    fldigi_port: int = Field(default=7362, description="fldigi XML-RPC port")
     
     # CW TX Envelope Shaping (HL2-side amplitude control)
     # Defaults are intentionally non-zero to enable click-reduction out of the box
@@ -45,6 +62,9 @@ class Settings(BaseSettings):
         description="Fallback command if internal streamer is disabled (legacy mode)"
     )
     
+    # Audio Streaming Configuration
+    audio_sample_rate: int = Field(default=48000, description="Audio sample rate for streaming")
+    
     # Logging
     log_level: str = Field(default="INFO", description="Logging level")
     log_format: str = Field(
@@ -62,7 +82,6 @@ class Settings(BaseSettings):
 settings = Settings()
 
 # Backwards compatibility: expose legacy names for existing code
-# TODO: Refactor modules to use settings.* directly
 HL2_IP = settings.hl2_ip
 HL2_PORT = settings.hl2_port
 HL2_LOCAL_PORT = settings.hl2_local_port

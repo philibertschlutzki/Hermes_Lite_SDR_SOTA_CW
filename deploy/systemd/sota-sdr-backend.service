@@ -1,0 +1,21 @@
+[Unit]
+Description=Hermes Lite 2 SDR SOTA & Digital Modes Backend
+After=network-online.target pipewire.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/opt/sota-cw/pi/backend
+Environment="SOTA_CW_HL2_IP=192.168.1.50"
+Environment="SOTA_CW_HL2_PORT=1024"
+Environment="SOTA_CW_IO_REG_BASE=200"
+Environment="SOTA_CW_CAT_SERVER_PORT=4532"
+Environment="SOTA_CW_WSJTX_PORT=2237"
+Environment="SOTA_CW_FLDIGI_PORT=7362"
+ExecStart=/opt/sota-cw/pi/backend/.venv/bin/uvicorn sota_cw.api:app --host 0.0.0.0 --port 8000
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
