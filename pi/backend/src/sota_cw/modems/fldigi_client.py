@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 
 class FldigiModem(str, enum.Enum):
     BPSK31 = "BPSK31"
+    BPSK63 = "BPSK63"
     QPSK31 = "QPSK31"
     RTTY = "RTTY"
     CW = "CW"
@@ -79,7 +80,9 @@ class FldigiClient:
         self.rx_buffer.clear()
 
     def set_modem(self, modem: str) -> bool:
-        """Set modem type (e.g. BPSK31, RTTY, CW)."""
+        """Set modem type (e.g. BPSK31, BPSK63, RTTY, CW). "PSK31"/"PSK63" werden auf BPSK abgebildet."""
+        aliases = {"PSK31": "BPSK31", "PSK63": "BPSK63"}
+        modem = aliases.get(str(modem).upper(), str(modem))
         if not self.is_connected and not self.connect():
             return False
         try:

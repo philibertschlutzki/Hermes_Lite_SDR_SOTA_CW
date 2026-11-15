@@ -20,7 +20,7 @@ Beispiele:
 ```bash
 export SOTA_CW_HL2_IP=192.168.1.50
 export SOTA_CW_HL2_PORT=1024
-export SOTA_CW_HL2_LOCAL_PORT=1025
+export SOTA_CW_HL2_LOCAL_PORT=0   # ein Socket für alles, Port beliebig
 export SOTA_CW_IO_REG_BASE=200
 
 # Envelope Shaping defaults (optional)

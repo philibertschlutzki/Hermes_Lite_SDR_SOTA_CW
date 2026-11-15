@@ -53,3 +53,30 @@ jobs:
         find docs/test_reports/vna_exports -type f -size +5M -exec ls -lh {} \; || true
         echo "Consider using Git LFS for large files"
       continue-on-error: true
+
+  firmware:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Keyer host tests (ohne Pico SDK)
+      run: make -C firmware/pico_cw_keyer/test test
+
+    - name: Install ARM toolchain
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y gcc-arm-none-eabi libnewlib-arm-none-eabi libstdc++-arm-none-eabi-newlib cmake ninja-build
+
+    - name: Build Pico firmware (Pico SDK 2.1.1)
+      run: |
+        git clone --depth 1 --branch 2.1.1 https://github.com/raspberrypi/pico-sdk.git "$RUNNER_TEMP/pico-sdk"
+        export PICO_SDK_PATH="$RUNNER_TEMP/pico-sdk"
+        cmake -S firmware/pico_cw_keyer -B build/fw -G Ninja
+        cmake --build build/fw
+
+    - name: Upload UF2
+      uses: actions/upload-artifact@v4
+      with:
+        name: pico_cw_keyer-uf2
+        path: build/fw/pico_cw_keyer.uf2

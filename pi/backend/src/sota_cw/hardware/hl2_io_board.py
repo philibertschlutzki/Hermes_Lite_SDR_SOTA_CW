@@ -1,26 +1,28 @@
 """
-HL2 IO Board integration (Jim Ahlstrom RP2040 Pico design).
+HL2 IO Board (N2ADR, Raspberry Pi Pico) – Standardregister.
 
-Communicates via HL2 internal I2C bus (address 0x1D) bridged via HL2 Extended Registers (0x3F).
+Zugriff über den I2C2-Bus des HL2 (C&C 0x3D, I2C-Adresse 0x1D), siehe
+`sota_cw.ioboard`. Registernummern nach `i2c_registers.h` aus
+https://github.com/jimahlstrom/HL2IOBoard:
 
-Standard register map:
-- Registers 0x00..0x04: TX frequency in Hz (5 bytes Big-Endian). Writing reg 4 triggers band update.
-- Register 0x05: Control / Fan
-- Register 0x06: Input status pins (EXTTR, In1..In5, PTT in)
-- Register 0x07: Antenna Tuner (ATU) interface (e.g. Icom AH-4 / Elecraft T1)
-- Register 0x08: Fault code
-- Register 0x09: Firmware version
-- Extended Base (200+): SOTA CW Hardware Keyer register block (Pico Keyer firmware)
+- 0..4   REG_TX_FREQ_BYTE4..BYTE0: TX-Frequenz in Hz, Register 0 = höchstes
+         Byte. Der Write auf Register 4 (BYTE0) übernimmt die Frequenz.
+- 5      REG_CONTROL (Write 1 = alle Register zurücksetzen)
+- 6      REG_INPUT_PINS (Bit0 EXTTR, 1 = RX; Bit1..5 In1..In5)
+- 7      REG_ANTENNA_TUNER
+- 8      REG_FAULT
+- 9/10   REG_FIRMWARE_MAJOR / REG_FIRMWARE_MINOR
+- 11     REG_RF_INPUTS
+- 12     REG_FAN_SPEED (0..255)
+- 200+   CW-Keyer dieses Projekts (siehe `ioboard.py`)
 """
 from __future__ import annotations
 
 import enum
 import logging
-import time
 from dataclasses import dataclass
-from typing import Optional
 
-from ..hl2_client import HL2Client
+from ..ioboard import CW_REG_BASE, IOBoard, I2CTransport
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +31,7 @@ class ATUState(enum.Enum):
     IDLE = 0
     START_TUNE = 1
     BYPASS = 2
-    TUNE_REQUEST = 0xEE  # Tuner asks radio to send RF tune carrier (~2W)
+    TUNE_REQUEST = 0xEE  # Tuner fordert Träger an
     SUCCESS = 0x00
     FAULT = 0xF0
 
@@ -42,94 +44,76 @@ class IOBoardStatus:
     atu_status: int
     fault: int
     firmware_version: int
+    firmware_minor: int = 0
+    reachable: bool = False
+    keyer_present: bool = False
+    keyer_api: int = 0
+    exttr_tx: bool = False
 
 
-class HL2IOBoard:
-    """Interface to the HL2 IO Board (Raspberry Pi Pico RP2040)."""
+class HL2IOBoard(IOBoard):
+    """IO-Board mit Standardfunktionen und CW-Keyer-Block."""
 
     I2C_ADDR = 0x1D
 
-    # Standard Register Addresses
-    REG_FREQ_B4 = 0x00
-    REG_FREQ_B3 = 0x01
-    REG_FREQ_B2 = 0x02
-    REG_FREQ_B1 = 0x03
-    REG_FREQ_B0 = 0x04  # LSB and update trigger
-    REG_CONTROL = 0x05
-    REG_INPUTS = 0x06
-    REG_ATU = 0x07
-    REG_FAULT = 0x08
-    REG_FW_VER = 0x09
+    REG_FREQ_B4 = 0
+    REG_FREQ_B3 = 1
+    REG_FREQ_B2 = 2
+    REG_FREQ_B1 = 3
+    REG_FREQ_B0 = 4  # LSB, löst Übernahme aus
+    REG_CONTROL = 5
+    REG_INPUTS = 6
+    REG_ATU = 7
+    REG_FAULT = 8
+    REG_FW_MAJOR = 9
+    REG_FW_MINOR = 10
+    REG_RF_INPUTS = 11
+    REG_FAN_SPEED = 12
 
-    def __init__(self, client: HL2Client, cw_reg_base: int = 200):
+    # Rückwärtskompatibler Name
+    REG_FW_VER = REG_FW_MAJOR
+
+    def __init__(self, client: I2CTransport, cw_reg_base: int = CW_REG_BASE):
+        super().__init__(client, reg_base=cw_reg_base, i2c_addr=self.I2C_ADDR)
         self.client = client
         self.cw_reg_base = cw_reg_base
         self.last_freq_hz: int = 0
         self.atu_in_progress: bool = False
 
-    def write_reg(self, reg_addr: int, value: int) -> None:
-        """Write 16-bit word to IO Board register via HL2 Extended Address (0x3F)."""
-        self.client.ext_write_u16(eaddr=int(reg_addr), value=int(value))
-
-    def read_reg(self, reg_addr: int) -> int:
-        """Read 16-bit word from IO Board register via HL2 Extended Address (0x3F)."""
-        return int(self.client.ext_read_u16(eaddr=int(reg_addr)))
-
-    # --- Standard IO Board Functions ---
+    # --- Standardfunktionen ---
 
     def set_tx_frequency(self, freq_hz: int) -> None:
-        """
-        Send 5-byte frequency to IO Board.
-        Writing byte 0 (LSB) triggers internal band recalculation on the Pico.
-        """
-        self.last_freq_hz = int(freq_hz)
-        b4 = (freq_hz >> 32) & 0xFF
-        b3 = (freq_hz >> 24) & 0xFF
-        b2 = (freq_hz >> 16) & 0xFF
-        b1 = (freq_hz >> 8) & 0xFF
-        b0 = freq_hz & 0xFF
+        """5-Byte-Frequenz schreiben; Register 4 (LSB) zuletzt als Übernahme."""
+        freq_hz = int(freq_hz)
+        self.last_freq_hz = freq_hz
+        for reg, shift in ((self.REG_FREQ_B4, 32), (self.REG_FREQ_B3, 24), (self.REG_FREQ_B2, 16),
+                           (self.REG_FREQ_B1, 8), (self.REG_FREQ_B0, 0)):
+            self.write_reg(reg, (freq_hz >> shift) & 0xFF)
+        logger.debug("IO-Board TX-Frequenz: %d Hz", freq_hz)
 
-        # Write high bytes
-        self.write_reg(self.REG_FREQ_B4, b4)
-        self.write_reg(self.REG_FREQ_B3, b3)
-        self.write_reg(self.REG_FREQ_B2, b2)
-        self.write_reg(self.REG_FREQ_B1, b1)
-        # Write trigger byte
-        self.write_reg(self.REG_FREQ_B0, b0)
-        logger.debug(f"IO Board frequency updated: {freq_hz} Hz")
-
-    def set_fan_speed(self, speed_level: int) -> None:
-        """Set fan speed (0=off, 1=low, 2=med, 3=high)."""
-        self.write_reg(self.REG_CONTROL, int(speed_level) & 0x0F)
+    def set_fan_speed(self, speed: int) -> None:
+        """Lüfter 0..255 (Firmware: PWM = Wert * 4)."""
+        self.write_reg(self.REG_FAN_SPEED, max(0, min(255, int(speed))))
 
     def read_inputs(self) -> int:
-        """Read input pins (EXTTR, In1..In5)."""
         try:
             return self.read_reg(self.REG_INPUTS)
         except Exception:
             return 0
 
     def start_atu_tune(self) -> None:
-        """Command the external Antenna Tuner to start auto-tuning cycle."""
-        logger.info("Starting ATU tuning cycle...")
-        self.write_reg(self.REG_ATU, 1)  # 1 = Start Tune
+        logger.info("ATU: Tune anfordern")
+        self.write_reg(self.REG_ATU, 1)
         self.atu_in_progress = True
 
     def bypass_atu(self) -> None:
-        """Command the Antenna Tuner to enter bypass mode."""
-        logger.info("Bypassing ATU...")
-        self.write_reg(self.REG_ATU, 2)  # 2 = Bypass
+        logger.info("ATU: Bypass")
+        self.write_reg(self.REG_ATU, 2)
         self.atu_in_progress = False
 
     def get_atu_status(self) -> int:
-        """
-        Check ATU status register.
-        0x00: Tuning complete / Idle
-        0xEE: Tuner requests RF tune carrier
-        >= 0xF0: Fault or error
-        """
         try:
-            val = self.read_reg(self.REG_ATU) & 0xFF
+            val = self.read_reg(self.REG_ATU)
             if val == 0:
                 self.atu_in_progress = False
             return val
@@ -137,21 +121,28 @@ class HL2IOBoard:
             return 0
 
     def get_status(self) -> IOBoardStatus:
-        """Read snapshot of IO board state."""
+        """Schnappschuss mit drei 4-Byte-Reads (5..8, 9..12, Keyer-Info)."""
         try:
-            ctrl = self.read_reg(self.REG_CONTROL)
-            inputs = self.read_reg(self.REG_INPUTS)
-            atu = self.read_reg(self.REG_ATU)
-            fault = self.read_reg(self.REG_FAULT)
-            fw = self.read_reg(self.REG_FW_VER)
+            a = self.read_regs(self.REG_CONTROL)   # control, inputs, atu, fault
+            b = self.read_regs(self.REG_FW_MAJOR)  # fw major, fw minor, rf inputs, fan
         except Exception:
-            ctrl, inputs, atu, fault, fw = 0, 0, 0, 0, 1
-
+            return IOBoardStatus(freq_hz=self.last_freq_hz, control=0, inputs=0, atu_status=0, fault=0,
+                                 firmware_version=0, reachable=False)
+        keyer_present, keyer_api = False, 0
+        try:
+            keyer_present, keyer_api = self.probe_keyer()
+        except Exception:
+            pass
         return IOBoardStatus(
             freq_hz=self.last_freq_hz,
-            control=ctrl,
-            inputs=inputs,
-            atu_status=atu,
-            fault=fault,
-            firmware_version=fw,
+            control=a[0],
+            inputs=a[1],
+            atu_status=a[2],
+            fault=a[3],
+            firmware_version=b[0],
+            firmware_minor=b[1],
+            reachable=True,
+            keyer_present=keyer_present,
+            keyer_api=keyer_api,
+            exttr_tx=not bool(a[1] & 0x01),
         )

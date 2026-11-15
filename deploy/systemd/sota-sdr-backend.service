@@ -6,10 +6,14 @@ Wants=network-online.target
 [Service]
 Type=simple
 User=pi
+# PipeWire-Sitzung des Benutzers (loginctl enable-linger pi)
+Environment="XDG_RUNTIME_DIR=/run/user/1000"
 WorkingDirectory=/opt/sota-cw/pi/backend
 Environment="SOTA_CW_HL2_IP=192.168.1.50"
 Environment="SOTA_CW_HL2_PORT=1024"
 Environment="SOTA_CW_IO_REG_BASE=200"
+# Zugriffsschutz für WLAN-Betrieb: Token setzen und im Tablet einmal mit ?token=... öffnen
+# Environment="SOTA_CW_API_TOKEN=bitte-aendern"
 Environment="SOTA_CW_CAT_SERVER_PORT=4532"
 Environment="SOTA_CW_WSJTX_PORT=2237"
 Environment="SOTA_CW_FLDIGI_PORT=7362"

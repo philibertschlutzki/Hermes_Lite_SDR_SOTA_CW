@@ -6,8 +6,11 @@ Wants=sota-sdr-backend.service
 [Service]
 Type=simple
 User=pi
-Environment="DISPLAY=:99"
-ExecStart=/usr/bin/xvfb-run -a -n 99 /usr/bin/fldigi --daemon --xmlrpc-server --xmlrpc-port 7362
+# PipeWire-Sitzung des Benutzers (loginctl enable-linger pi)
+Environment="XDG_RUNTIME_DIR=/run/user/1000"
+# Eigenes Xvfb-Display (98), WSJT-X nutzt 99. fldigi kennt kein --daemon;
+# XML-RPC ist immer aktiv, Adresse/Port per --xmlrpc-server-address/-port.
+ExecStart=/usr/bin/xvfb-run -a -n 98 /usr/bin/fldigi --xmlrpc-server-address 127.0.0.1 --xmlrpc-server-port 7362
 Restart=on-failure
 RestartSec=5
 

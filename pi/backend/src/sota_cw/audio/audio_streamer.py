@@ -1,7 +1,7 @@
 """
 Audio Streamer for Remote Tablet Playback.
 
-Captures demodulated audio chunks (from HL2Streamer or PipeWire virtual sink)
+Bekommt demodulierte Audioblöcke aus RxAudioPipeline (feed_audio)
 and broadcasts them via WebSocket or HTTP streaming to Android tablet clients.
 Features:
 - Low-latency circular buffering
@@ -34,6 +34,8 @@ class AudioStreamer:
         self.squelch_threshold: float = 0.0
         self.is_running: bool = False
         self._lock = threading.Lock()
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self.blocks_sent = 0
 
     def set_volume(self, vol: float) -> None:
         self.volume = max(0.0, min(2.0, float(vol)))
@@ -58,16 +60,24 @@ class AudioStreamer:
             except Exception:
                 pass
 
-        # Push to async queues
-        loop = asyncio.get_event_loop() if asyncio.get_event_loop().is_running() else None
+        # Aus dem Audio-Thread an die Event-Loop der WebSocket-Clients übergeben
+        loop = self._loop
         for q in list(self.subscribers):
             try:
-                if loop and loop.is_running():
+                if loop is not None and loop.is_running():
                     loop.call_soon_threadsafe(self._queue_put_nowait, q, pcm_bytes)
                 else:
                     self._queue_put_nowait(q, pcm_bytes)
             except Exception:
                 pass
+        self.blocks_sent += 1
+
+    def feed_audio(self, audio: np.ndarray) -> None:
+        """Consumer für RxAudioPipeline: float32 -1..1 -> PCM16 an alle Clients."""
+        if not self.subscribers:
+            return
+        pcm = np.clip(np.round(np.asarray(audio) * 32767.0), -32767, 32767).astype(np.int16).tobytes()
+        self.broadcast_pcm(pcm)
 
     def _queue_put_nowait(self, q: asyncio.Queue, data: bytes) -> None:
         try:
@@ -81,6 +91,10 @@ class AudioStreamer:
             pass
 
     def register_subscriber(self, q: asyncio.Queue) -> None:
+        try:
+            self._loop = asyncio.get_running_loop()
+        except RuntimeError:
+            pass
         with self._lock:
             self.subscribers.add(q)
             logger.info(f"New audio subscriber registered. Total: {len(self.subscribers)}")

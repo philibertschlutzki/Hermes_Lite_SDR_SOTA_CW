@@ -127,7 +127,7 @@ class HamlibCatServer:
                 "2\n"  # Rig model: NET rigctl
                 "1\n"  # ITU region
                 "100000.000000 60000000.000000 0xef -1 -1 0x1 0x0\n"  # RX range
-                "1800000.000000 54000000.000000 0xef 5000 5000 0x1 0x0\n"  # TX range
+                "1800000.000000 29700000.000000 0xef 5000 5000 0x1 0x0\n"  # TX range (kein 6-m-TX: N2ADR ohne 6-m-Filter)
                 "0 0 0 0 0 0 0\n"
                 "0 0 0 0 0 0 0\n"
                 "0xef 500\n"  # CW filter
