@@ -16,7 +16,7 @@ Headless-Betrieb eines **Hermes-Lite 2 (HL2)** über einen **Raspberry Pi 4B** (
 
 | Betriebsart | Weg im System | Status |
 |---|---|---|
-| CW TX (Text → Morse) | Backend → HL2 (C&C 0x3D, I2C2) → Pico-Keyer → J6-Schalter → HL2 CN4 | ⚠️ Code fertig und getestet (Host-Tests, Fake-HL2), Gerätetest offen |
+| CW TX (Text → Morse) | Backend → HL2 (C&C 0x3D, I2C2) → Pico-Keyer → ACC (Out7/Out8) → Keying-Kabel → HL2 CN4 | ⚠️ Code fertig und getestet (Host-Tests, Fake-HL2), Gerätetest offen |
 | CW RX (Decoder) | HL2 IQ (24 bit) → Demodulator → 22 050 Hz → `multimon-ng` | ⚠️ Code fertig, Gerätetest offen |
 | FT8, FT4, WSPR, JT9, JT65, FST4/FST4W | WSJT-X ↔ PipeWire ↔ Backend-Demodulator/Modulator ↔ HL2 | ⚠️ Audio- und TX-Pfad vorhanden, Gerätetest offen |
 | PSK31/PSK63 (BPSK/QPSK), RTTY 45,45 Bd / 170 Hz | fldigi ↔ PipeWire / XML-RPC 7362 ↔ Backend ↔ HL2 | ⚠️ wie oben |
@@ -56,7 +56,7 @@ Hinweise zur Einordnung:
 │  - AD9866 (12-bit ADC/DAC), FPGA mit DDC/DUC                 │
 │  - N2ADR-Filterboard (I2C2, Adresse 0x20)                    │
 │  - IO-Board mit RP2040/Pico (I2C2, Adresse 0x1D)             │
-│  - CN4 (3,5 mm): Tip = CW-Key, Ring = PTT ← Pico über J6     │
+│  - CN4 (3,5 mm): Tip = Key, Ring = PTT ← Kabel vom IO-ACC    │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -113,7 +113,7 @@ Fakten:
 
 ✅ **Firmware:** `firmware/pico_cw_keyer` ist eine vollständige IO-Board-Firmware: I2C-Slave an i2c1 (GPIO 14/15, Adresse 0x1D), Standardregister 0–12 (Frequenz, Eingänge, Lüfter, RF-Eingänge, HPF) und der Keyer. Sie ersetzt die N2ADR-Standardfirmware; Bandausgänge für eine Endstufe und der ATU-Treiber sind **nicht** enthalten.
 
-**CW-Pfad:** Der Pi schreibt den Text in ein FIFO-Register des Pico. Der Pico erzeugt das Morse-Timing und schaltet zwei Low-Side-Schalter auf J6 (Out7 = KEY, Out8 = PTT). Diese werden innerhalb des Gehäuses mit **CN4 Tip/Ring** des HL2 verbunden. Der HL2 erzeugt daraus ein geformtes CW-Signal. Zwischen Pi und HL2 bleibt das Netzwerkkabel die einzige Verbindung. Schutz: Host-Heartbeat (Pico lässt nach 3 s ohne I2C-Write los), Tune-Begrenzung 15 s, Hardware-Watchdog des Pico.
+**CW-Pfad:** Der Pi schreibt den Text in ein FIFO-Register des Pico. Der Pico erzeugt das Morse-Timing und schaltet zwei Low-Side-Schalter (Out7 = KEY, Out8 = PTT) am ACC-Anschluss (D-Sub) des IO-Boards. Ein externes Keying-Kabel (D-Sub-Stecker ↔ 3,5-mm-Klinke) führt sie auf die Key-Buchse **CN4** des HL2: Out7 → Tip, Out8 → Ring, GND → Sleeve. Es wird nichts gelötet oder im Gehäuse verändert. Der HL2 erzeugt daraus ein geformtes CW-Signal. Zwischen Pi und HL2 bleibt das Netzwerkkabel die einzige Verbindung. Schutz: Host-Heartbeat (Pico lässt nach 3 s ohne I2C-Write los), Tune-Begrenzung 15 s, Hardware-Watchdog des Pico.
 
 **Envelope-Shaping:** Die Adressen 0x18/0x19 (`set_cw_envelope`) gibt es in der Standard-HL2-Gateware nicht. Sie existieren nur im eigenen Gateware-Fork ([Hermes-Lite2_DSP PR #1](https://github.com/philibertschlutzki/Hermes-Lite2_DSP/pull/1)). Mit Standard-Gateware greift die eingebaute CW-Formung des HL2.
 

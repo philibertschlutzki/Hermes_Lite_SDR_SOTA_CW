@@ -3,13 +3,15 @@
 Firmware für den Raspberry Pi Pico auf dem HL2-IO-Board (N2ADR). Sie ersetzt die Standardfirmware und macht den Pico zum CW-Keyer, der vom Raspberry Pi **nur über das Netzwerkkabel** gesteuert wird:
 
 ```
-Pi --Protocol 1 (C&C 0x3D)--> HL2 --I2C2, Adresse 0x1D--> Pico --J6 Out7/Out8--> HL2 CN4 Tip/Ring
+Pi --Protocol 1 (C&C 0x3D)--> HL2 --I2C2, Adresse 0x1D--> Pico --Out7/Out8 am ACC (D-Sub)--> Keying-Kabel --> HL2 CN4 (3,5 mm)
 ```
 
 - I2C-Slave an `i2c1` (GPIO 14 SDA, GPIO 15 SCL), Adresse 0x1D, 400 kHz
 - Standardregister 0–12 (TX-Frequenz, Eingänge, Lüfter, RF-Eingänge, HPF), Nummern wie `i2c_registers.h` der N2ADR-Firmware
 - Keyer ab Register 200: Text-FIFO (255 Zeichen), WPM, Farnsworth, Gewichtung, PTT-Vor-/Nachlauf, Tune
 - Sicherheit: ABORT lässt die Taste sofort im I2C-Interrupt los; Host-Watchdog (Standard 3 s ohne I2C-Write); Tune max. 15 s; Hardware-Watchdog 200 ms; beim Start sind alle Ausgänge aus
+
+Keying-Kabel: D-Sub-Stecker (ACC des IO-Boards) ↔ 3,5-mm-Klinkenstecker (3-polig): **Out7 (KEY) → Tip, Out8 (PTT) → Ring, GND → Sleeve**. Die D-Sub-Pinnummern vor dem Bauen messen.
 
 Registermap: [docs/03_ioboard_register_protocol.md](../../docs/03_ioboard_register_protocol.md). Verdrahtung: [docs/01_hardware_wiring.md](../../docs/01_hardware_wiring.md).
 

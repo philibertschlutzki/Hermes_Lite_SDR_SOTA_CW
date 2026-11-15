@@ -42,7 +42,9 @@ Bekannte Ursache: IQ-Format und Samplerate passen nicht zum HL2 bzw. zu `multimo
 
 ## IO-Board / Pico-Keyer reagiert nicht
 
-Bekannte Ursache: Backend und Firmware nutzen noch keinen I2C-Weg, den der HL2 unterstützt (G7, G8). Siehe [03_ioboard_register_protocol.md](03_ioboard_register_protocol.md).
+Checks:
+- `GET /hardware/ioboard/status`: `reachable` und `keyer_present` müssen `true` sein. `keyer_present: false` bei `reachable: true` heißt: Es läuft noch die Standardfirmware, `pico_cw_keyer.uf2` flashen.
+- `GET /hl2/status`: `stream_running` true und `rx_age_s` klein, sonst erreicht das Backend den HL2 nicht.
 
 Checks für die Hardware:
 - Versorgung und Masse des IO-Boards.
@@ -51,12 +53,14 @@ Checks für die Hardware:
 ## PTT/KEY falsches Verhalten (invertiert, vertauscht, „hängt“)
 
 Checks:
-- CN4-Belegung: Tip = KEY, Ring = PTT, Sleeve = GND.
+- Keying-Kabel: Out7 → Tip (KEY), Out8 → Ring (PTT), GND → Sleeve. D-Sub-Pins nachmessen ([01_hardware_wiring.md](01_hardware_wiring.md)).
+- Dauer-PTT: Mono-Klinkenstecker verbindet Ring mit Sleeve. 3-poligen Stecker verwenden.
 - Low-Side-Schalter: Ausgang zieht gegen GND, solange der Pico-GPIO High ist.
-- Pico-GPIOs laut `firmware/pico_cw_keyer/src/outputs.c`: PTT = GPIO 2, KEY = GPIO 3.
+- Pico-GPIOs laut `firmware/pico_cw_keyer/src/main.c`: KEY = GPIO 9 (Out7), PTT = GPIO 8 (Out8).
+- Taste hängt nie länger als 3 s ohne Verbindung zum Pi (Host-Watchdog, `cw_watchdog_s`).
 
 Fix:
-- Leitungen tauschen bzw. Schaltstufe korrigieren.
+- Adern im Kabel tauschen bzw. Firmware mit `-DKEY_GPIO=… -DPTT_GPIO=…` bauen.
 
 ## FT8/FT4: Decodes fehlen oder DT ist groß
 

@@ -3,7 +3,7 @@
 Ablauf (nur über das Netzwerkkabel Pi <-> HL2):
 
     Pi --Protocol 1, C&C 0x3D--> HL2 --I2C2 0x1D--> Pico
-    Pico --Low-Side-Schalter (J6)--> HL2 CN4 Tip (Key) / Ring (PTT)
+    Pico --Out7/Out8 am ACC (D-Sub)--> Keying-Kabel --> HL2 CN4 Tip (Key) / Ring (PTT), GND = Sleeve
 
 Der Pico erzeugt das Morse-Timing selbst. Der HL2 formt die HF-Hüllkurve
 (CN4-Tip getastet = CW mit eingebauter Flankenformung).

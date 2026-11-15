@@ -75,10 +75,11 @@
 | :---: | :--- | :--- | :--- | :--- | :---: | :---: |
 | - [ ] | 4.1 | **`[SET]` SMA $\leftrightarrow$ BNC HF-Adapter-Kit (8-teilig)** | Kompletter Satz: SMA-M/F $\leftrightarrow$ BNC-M/F & SMA-M $\leftrightarrow$ SMA-M (für HL2, NanoVNA & Feld-Reserve) | `SMA to BNC RF coaxial adapter kit 8pcs` | 1 | 6.50 |
 | - [ ] | 4.2 | **`[SET]` XT60 & DC $5.5 \times 2.1\text{ mm}$ Power-Set** | $5\times$ XT60 Paar + vorkonfektionierte XT60-auf-DC-$5.5\times 2.1\text{ mm}$ Kabel ($16\text{ AWG}$) + wasserdichte Einbaubuchsen | `XT60 to DC 5.5x2.1mm cable 16AWG panel mount jack kit` | 1 | 7.50 |
-| - [ ] | 4.3 | **`[SET]` Ultra-Kurz-Patchkabel-Paket (USB & LAN)** | $2\times$ **Cat7 S/FTP LAN** ($0.25\text{ m}$, HL2 $\leftrightarrow$ RPi 4B) + $2\times$ **USB-C Power** ($0.2\text{ m}$, Buck $\leftrightarrow$ RPi 4B) + $2\times$ **USB-A auf Micro-USB** ($0.25\text{ m}$, RPi 4B $\leftrightarrow$ Pico) | `short Cat7 ethernet cable 0.25m short USB C Micro USB 20cm` | 1 | 8.50 |
+| - [ ] | 4.3 | **`[SET]` Ultra-Kurz-Patchkabel-Paket (USB & LAN)** | $2\times$ **Cat7 S/FTP LAN** ($0.25\text{ m}$, HL2 $\leftrightarrow$ RPi 4B) + $2\times$ **USB-C Power** ($0.2\text{ m}$, Buck $\leftrightarrow$ RPi 4B) *(Pico braucht im Betrieb keine USB-Verbindung zum Pi; nur zum Flashen einmal ein beliebiges Micro-USB-Kabel am Rechner)* | `short Cat7 ethernet cable 0.25m short USB C Micro USB 20cm` | 1 | 8.50 |
 | - [ ] | 4.4 | **HF-Pigtail (HL2 Front $\leftrightarrow$ Koax)** | **SMA Male** auf **BNC Female**, RG316 Koax, Länge **$15\text{--}20\text{ cm}$** (Zugentlastung der SMA-Buchse am HL2) | `SMA male to BNC female RG316 pigtail cable 15cm` | 2 | 4.00 |
 | - [ ] | 4.5 | **SOTA-Speiseleitung (Koax)** | **$5\text{ m}$ RG316** oder **RG58** mit **BNC Male $\leftrightarrow$ BNC Male** (leicht & flexibel für Portabelbetrieb) | `BNC male to BNC male RG316 coaxial cable 5m` | 1 | 7.50 |
-| - [ ] | 4.6 | **IO-Board Flachbandkabel** | $2.54\text{ mm}$ IDC / Dupont Flachbandkabel ($10$-polig / $20$-polig, falls IO-Board extern angebunden wird) | `2.54mm IDC ribbon cable 10 pin 20 pin` | 1 | 2.50 |
+| - [ ] | 4.6 | **Keying-Kabel IO-Board ACC $\leftrightarrow$ HL2 Key-Buchse** | **3,5-mm-Klinkenstecker 3-polig (Stereo/TRS)** + **D-Sub-Stecker passend zum ACC-Anschluss** (Polzahl/Geschlecht am Gerät prüfen, mit Haube) + $30\text{ cm}$ 3-adriges geschirmtes Kabel. Belegung: Out7 (KEY) → Tip, Out8 (PTT) → Ring, GND → Sleeve | `3.5mm stereo plug solder` + `D-sub connector solder hood` + `3 core shielded cable` | 1 | 6.00 |
+| - [ ] | 4.7 | **IO-Board Flachbandkabel** | $2.54\text{ mm}$ IDC / Dupont Flachbandkabel ($10$-polig / $20$-polig, falls IO-Board extern angebunden wird) | `2.54mm IDC ribbon cable 10 pin 20 pin` | 1 | 2.50 |
 
 ---
 
@@ -87,8 +88,8 @@
 ### Geschätztes Gesamtbudget
 * **Baugruppe 2 (18650 4S2P Power Pack inkl. Spot-Welder, Charger & Markenzellen):** ca. **CHF 110.50** *(ohne Spot-Welder & Gehäuse: ca. **CHF 86.00**)*
 * **Baugruppe 3 (Tunerlose Linked-EFHW $40\text{m--}10\text{m}$ + Choke + Mast):** ca. **CHF 48.50** *(zzgl. ca. CHF 58.00, falls NanoVNA-H4 noch nicht vorhanden)*
-* **Baugruppe 4 (Alle Kabel-, Adapter- & Stecker-Sets):** ca. **CHF 36.50**
-* **Summe Peripherie (Power + Antenne + Verkabelung):** ca. **CHF 171.00 – 195.50** *(zzgl. SDR/RPi-Kernhardware aus Baugruppe 1, falls nicht vorhanden)*
+* **Baugruppe 4 (Alle Kabel-, Adapter- & Stecker-Sets):** ca. **CHF 42.50**
+* **Summe Peripherie (Power + Antenne + Verkabelung):** ca. **CHF 177.00 – 201.50** *(zzgl. SDR/RPi-Kernhardware aus Baugruppe 1, falls nicht vorhanden)*
 
 ### Obligatorische Prüf-Schritte vor dem ersten Einschalten
 1. **Spannungs-Check (ohne HL2):** Buck-Boost Wandler (Pos. 2.3) mit Multimeter exakt auf **$13.80\text{ V}$ DC** einstellen und Potentiometer mit einem Tropfen Sicherungslack fixieren.

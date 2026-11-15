@@ -26,7 +26,7 @@ Priorität: **P1** = verhindert Funktion oder ist sicherheitsrelevant, **P2** = 
 | G6 | P2 | Zwei Sockets starteten den HL2. | Code | Ein Socket in `HL2Client`; Decoder, Audio und Steuerung hängen als Callbacks daran. |
 | G7 | P1 | IO-Board über 0x3F + EADDR mit 16-bit-Werten, Register > 255. | Code | `ioboard.py` nutzt C&C 0x3D (I2C2, 0x1D), 8-bit-Register; neue Keyer-Map 200–215. |
 | G8 | P1 | Pico-Firmware ohne I2C-Slave, nur Mock-Register. | Code | `firmware/pico_cw_keyer`: I2C-Slave (i2c1, GPIO 14/15), Keyer-Automat, Watchdogs. Baut gegen Pico SDK 2.1.1 (CI). Test: Firmware flashen, `GET /hardware/ioboard/status` zeigt `keyer_present`. |
-| G9 | P2 | KEY/PTT des Pico nicht mit dem HL2 verbunden. | Code | Firmware schaltet J6 Out7 (KEY) und Out8 (PTT); Verdrahtung zu CN4 in [01_hardware_wiring.md](01_hardware_wiring.md). Test: Verdrahtung und Polarität am Gerät prüfen. |
+| G9 | P2 | KEY/PTT des Pico nicht mit dem HL2 verbunden. | Code | Firmware schaltet Out7 (KEY) und Out8 (PTT) am ACC-Anschluss; externes Keying-Kabel D-Sub ↔ 3,5-mm-Klinke auf CN4 (Out7 → Tip, Out8 → Ring, GND → Sleeve), siehe [01_hardware_wiring.md](01_hardware_wiring.md). Test: D-Sub-Pins von Out7/Out8/GND messen (nicht verifiziert), dann Polarität prüfen. |
 | G10 | P2 | `set_cw_envelope()` mit Adressen 0x18/0x19 der eigenen Gateware. | Code | Nur noch aktiv mit `SOTA_CW_HL2_CUSTOM_GATEWARE_ENVELOPE=true`. |
 | G11 | P2 | 6 m TX möglich, CAT meldete TX bis 54 MHz. | Code | `BandInfo.tx_allowed`, TX-Sperre in `HL2Control`/`CWJobManager`, CAT-TX-Bereich bis 29,7 MHz. |
 | G12 | P3 | IO-Board-Standardregister nicht belegt. | Code | Registernummern aus `i2c_registers.h` übernommen (Lüfter jetzt Register 12, Firmware 9/10). |
