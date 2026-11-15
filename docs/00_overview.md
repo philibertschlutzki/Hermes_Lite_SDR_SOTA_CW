@@ -37,7 +37,7 @@ Dieses Projekt betreibt einen **Hermes-Lite 2 (HL2)** headless über einen **Ras
 ## Begriffe
 
 - **PTT** (Push To Talk): schaltet den Sender ein/aus.
-- **KEY**: CW-Tastung. Am HL2 über die 3,5-mm-Buchse CN4 (Tip).
+- **KEY**: CW-Tastung. Am HL2 über die 3,5-mm-Buchse CN4 (Tip). Der Pico tastet sie über das Keying-Kabel vom ACC-Anschluss des IO-Boards (Out7 → Tip, Out8 → Ring, GND → Sleeve).
 - **MOX**: Sendebit im openHPSDR-Protokoll (C0 Bit 0), per Software gesetzt.
 - **Low-Side-Switching**: Ein Ausgang schaltet gegen Masse (GND), nicht gegen +V.
 - **C&C**: Command & Control, die Steuerbytes C0–C4 im openHPSDR-Protocol-1-Frame.

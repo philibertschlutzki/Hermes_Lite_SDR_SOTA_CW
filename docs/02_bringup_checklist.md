@@ -51,10 +51,12 @@ Das Script kopiert den Code nach `/opt/sota-cw` und richtet Python-Umgebung, ngi
 - [ ] Firmware geflasht.
 - [ ] Minimaler Lese-/Schreibtest eines Registers funktioniert.
 
-Hinweis: Das IO-Board wird über I2C2 des HL2 (Adresse 0x1D) mit 8-bit-Registern angesprochen. Der aktuelle Backend-Code und die Pico-Firmware passen dazu noch nicht ([03_ioboard_register_protocol.md](03_ioboard_register_protocol.md)).
+Hinweis: Das IO-Board wird über I2C2 des HL2 (Adresse 0x1D) mit 8-bit-Registern angesprochen ([03_ioboard_register_protocol.md](03_ioboard_register_protocol.md)). Kontrolle: `GET /hardware/ioboard/status` zeigt `keyer_present: true`.
 
 ## 6) PTT/KEY-Funktionstest
 
+- [ ] Keying-Kabel gesteckt: D-Sub am ACC-Anschluss des IO-Boards, 3,5-mm-Klinke (3-polig) in CN4 des HL2.
+- [ ] Belegung vorher gemessen: Out7 → Tip, Out8 → Ring, GND → Sleeve ([01_hardware_wiring.md](01_hardware_wiring.md)).
 - [ ] PTT: TX geht sicher an und wieder aus.
 - [ ] KEY: CW-Tastung zuverlässig, kein Hängenbleiben.
 - [ ] Wirkt etwas invertiert: Low-Side-Schalter und „High = aktiv“ der Pico-GPIOs prüfen.
@@ -64,7 +66,7 @@ Hinweis: Das IO-Board wird über I2C2 des HL2 (Adresse 0x1D) mit 8-bit-Registern
 - [ ] `systemctl status sota-wsjtx sota-fldigi` zeigt beide Dienste aktiv.
 - [ ] WebUI-Tab WSJT-X zeigt Verbindung (grüner Punkt).
 
-Hinweis: Empfangs- und Sendeaudio zwischen HL2 und WSJT-X/fldigi ist noch nicht implementiert ([07_known_gaps.md](07_known_gaps.md), A1–A2).
+Hinweis: In WSJT-X/fldigi als Eingang den Monitor von `SDR_RX_Sink` und als Ausgang `Digital_TX_Sink` wählen, PTT über CAT (Hamlib NET rigctl, 127.0.0.1:4532).
 
 ## Nächster Schritt
 

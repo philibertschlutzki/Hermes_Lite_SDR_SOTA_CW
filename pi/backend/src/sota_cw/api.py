@@ -100,7 +100,7 @@ cw_manager = CWJobManager(
 
 
 def _on_swr_trip(reason: str) -> None:
-    # Der Pico tastet über CN4; nur er kann eine laufende CW-Aussendung beenden
+    # Der Pico tastet CN4 über das Keying-Kabel; nur er kann eine laufende CW-Aussendung beenden
     try:
         cw_manager.abort_job()
         cw_manager.tune(False)

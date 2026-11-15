@@ -5,7 +5,9 @@
 //   nur das Netzwerkkabel zum HL2.
 // - Standardregister 0..12 (Frequenz, Eingänge, Lüfter, RF-Eingänge, HPF).
 // - CW-Keyer ab Register 200: Text-FIFO, Morse-Timing im Pico, Ausgabe auf
-//   die Low-Side-Schalter J6 (KEY, PTT), die mit CN4 des HL2 verbunden werden.
+//   die Low-Side-Schalter Out7 (KEY) und Out8 (PTT) am ACC-Anschluss (D-Sub).
+//   Ein externes Keying-Kabel führt sie auf die 3,5-mm-Key-Buchse CN4 des HL2:
+//   Out7 -> Tip, Out8 -> Ring, GND -> Sleeve.
 //
 // Pinbelegung nach hl2ioboard.h (jimahlstrom/HL2IOBoard).
 #include <stdbool.h>
@@ -46,13 +48,13 @@
 #define GPIO_OUT6     22
 #define GPIO_LED      25
 
-// Keying-Ausgänge: J6 = Low-Side-Schalter (High am GPIO = Ausgang nach GND).
+// Keying-Ausgänge: Low-Side-Schalter (High am GPIO = Ausgang nach GND).
 // Per CMake überschreibbar, z. B. -DKEY_GPIO=22 für Out6.
 #ifndef KEY_GPIO
-#define KEY_GPIO GPIO_OUT7   // J6 Pin 7 -> HL2 CN4 Tip (Key)
+#define KEY_GPIO GPIO_OUT7   // Out7 (J6 Pin 7) -> Keying-Kabel -> CN4 Tip (Key)
 #endif
 #ifndef PTT_GPIO
-#define PTT_GPIO GPIO_OUT8   // J6 Pin 8 -> HL2 CN4 Ring (PTT)
+#define PTT_GPIO GPIO_OUT8   // Out8 (J6 Pin 8) -> Keying-Kabel -> CN4 Ring (PTT)
 #endif
 
 #define I2C_BAUD   (400 * 1000)
