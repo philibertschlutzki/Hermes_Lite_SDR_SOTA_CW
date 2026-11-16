@@ -1,4 +1,4 @@
-### Vorgehen: Aufbau & Integration der Terminated Rhombic RX-Antenne (Pianazö, Airolo)
+### Vorgehen: Aufbau & Integration der Terminated Rhombic RX-Antenne
 
 * **1. Standortvermessung & Ausrichtung festlegen (LV95: `2'685'931.37, 1'152'055.87`):**
   * **Hauptachse ausrichten:** Längsachse entlang der Lichtung mit einem Azimut von **$75^\circ\text{–}80^\circ$ (Ostnordost)** parallel zu den Höhenlinien festlegen (Speisepunkt im Westen, Abschlusswiderstand im Osten)[cite: 1].
